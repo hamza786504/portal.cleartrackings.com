@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum Role {
+  doctor
+  designer
+  admin
+}
+
+model User {
+  id              Int      @id @default(autoincrement())
+  email           String   @unique
+  password        String
+  role            Role     @default(doctor)
+  firstName       String?
+  lastName        String?
+  isApproved      Boolean  @default(false)
+  isSuspended     Boolean  @default(false)
+  doctorDetails   Json?
+  designerDetails Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  casesAsDoctor         Case[]               @relation("CaseDoctor")
+  casesPicked           Case[]               @relation("CasePicker")
+  messages              Message[]
+  permissionsAsDesigner DesignerPermission[] @relation("PermDesigner")
+  permissionsAsDoctor   DesignerPermission[] @relation("PermDoctor")
+
+  @@map("users")
+}
+
+model DesignerPermission {
+  id         Int  @id @default(autoincrement())
+  designerId Int
+  doctorId   Int
+  designer   User @relation("PermDesigner", fields: [designerId], references: [id], onDelete: Cascade)
+  doctor     User @relation("PermDoctor", fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([designerId, doctorId])
+  @@map("designer_permissions")
+}
+
+model Case {
+  id     Int  @id @default(autoincrement())
+  doctorId Int
+  doctor   User @relation("CaseDoctor", fields: [doctorId], references: [id])
+
+  patientName    String
+  practiceName   String
+  chiefComplaint String @db.Text
+  dob            String
+  toothSystem    String @default("FDI (recommended)")
+
+  impressionMethod  String
+  impressionsTaken  Json @default("[]")
+  additionalRecords Json @default("[]")
+
+  treatArches   String  @default("Both")
+  velocity      String  @default("0.2")
+  otherVelocity String?
+
+  caseType       String
+  wearSchedule   String
+  trimlineHeight String
+  retainer       String
+  planDuration   String?
+
+  doNotMoveTeeth        Json @default("[]")
+  avoidAttachmentsTeeth Json @default("[]")
+  teethForExtraction    Json @default("[]")
+  leaveSpacesOpen       Json @default("[]")
+
+  upperMidlineValue  String?
+  upperMidlineGoal   String?
+  lowerMidlineValue  String?
+  lowerMidlineGoal   String?
+  overjetValue       String?
+  overjetGoal        String?
+  overbiteValue      String?
+  overbiteGoal       String?
+  canineRelation     String?
+  molarRelation      String?
+  anteriorCrossbite  String?
+  posteriorCrossbite String?
+  deciduousTeeth     String?
+  ipr                String?
+  engagers           String?
+  spaceManagement    String?
+  additionalInfo     String? @db.Text
+  treatmentPlan      String  @db.Text
+
+  scanFiles     Json @default("[]")
+  patientImages Json @default("[]")
+
+  status String @default("pending")
+
+  pickedById Int?
+  pickedBy   User? @relation("CasePicker", fields: [pickedById], references: [id])
+
+  designLink  String    @default("")
+  deliveredAt DateTime?
+  approvedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages Message[]
+
+  @@map("cases")
+}
+
+model Message {
+  id     Int  @id @default(autoincrement())
+  caseId Int
+  case   Case @relation(fields: [caseId], references: [id])
+
+  senderId   Int
+  sender     User   @relation(fields: [senderId], references: [id])
+  senderRole String
+
+  body      String   @db.VarChar(2000)
+  createdAt DateTime @default(now())
+
+  @@index([caseId, createdAt])
+  @@map("messages")
+}
