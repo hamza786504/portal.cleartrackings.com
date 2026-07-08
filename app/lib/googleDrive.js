@@ -16,6 +16,11 @@ class GoogleDriveService {
         refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
       });
     }
+
+    // Create the Drive client ONCE and reuse across all method calls.
+    // Previously a new client was created on every uploadFile() call,
+    // which wasted memory and object initialization time.
+    this.drive = google.drive({ version: 'v3', auth: this.oauth2Client });
   }
 
   /**
@@ -25,8 +30,6 @@ class GoogleDriveService {
    */
   async uploadFile(file, folderId = null) {
     try {
-      const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
-
       const metadata = {
         name: file.originalname,
         parents: folderId ? [folderId] : [],
@@ -35,7 +38,7 @@ class GoogleDriveService {
       // Convert Buffer to a Node.js Readable stream
       const readable = Readable.from(file.buffer);
 
-      const response = await drive.files.create({
+      const response = await this.drive.files.create({
         requestBody: metadata,
         media: {
           mimeType: file.mimetype,
@@ -45,7 +48,7 @@ class GoogleDriveService {
       });
 
       // Make the file publicly viewable
-      await drive.permissions.create({
+      await this.drive.permissions.create({
         fileId: response.data.id,
         requestBody: { role: 'reader', type: 'anyone' },
       });
@@ -64,15 +67,14 @@ class GoogleDriveService {
   }
 
   /**
-   * Upload multiple files to Google Drive.
+   * Upload multiple files to Google Drive IN PARALLEL.
+   * Previously used a sequential for-loop which held the server process busy
+   * for (N files × upload time). Promise.all() releases the process much faster
+   * as all uploads run concurrently.
    */
   async uploadMultipleFiles(files, folderId = null) {
-    const uploadedFiles = [];
-    for (const file of files) {
-      const uploaded = await this.uploadFile(file, folderId || process.env.GOOGLE_DRIVE_FOLDER_ID || null);
-      uploadedFiles.push(uploaded);
-    }
-    return uploadedFiles;
+    const targetFolder = folderId || process.env.GOOGLE_DRIVE_FOLDER_ID || null;
+    return Promise.all(files.map((file) => this.uploadFile(file, targetFolder)));
   }
 
   /**
@@ -80,8 +82,7 @@ class GoogleDriveService {
    */
   async getFolderId(folderName) {
     try {
-      const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
-      const response = await drive.files.list({
+      const response = await this.drive.files.list({
         q: `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
         fields: 'files(id, name)',
       });
@@ -97,7 +98,6 @@ class GoogleDriveService {
    */
   async createFolder(folderName, parentFolderId = null) {
     try {
-      const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
       const metadata = {
         name: folderName,
         mimeType: 'application/vnd.google-apps.folder',
@@ -105,7 +105,7 @@ class GoogleDriveService {
       if (parentFolderId) {
         metadata.parents = [parentFolderId];
       }
-      const response = await drive.files.create({
+      const response = await this.drive.files.create({
         requestBody: metadata,
         fields: 'id,name',
       });
@@ -122,8 +122,7 @@ class GoogleDriveService {
    */
   async getStorageQuota() {
     try {
-      const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
-      const response = await drive.about.get({ fields: 'storageQuota' });
+      const response = await this.drive.about.get({ fields: 'storageQuota' });
       const quota = response.data.storageQuota || {};
       return {
         limit: quota.limit ? Number(quota.limit) : null,

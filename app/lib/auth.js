@@ -23,6 +23,11 @@ export function verifyToken(req) {
  * Verify the token AND re-check the user against the database — catches
  * accounts suspended by an admin after the token was issued (a JWT alone
  * can't know about that; this is what forces suspended sessions out).
+ *
+ * Optimization: for designer role, the user lookup and the permissions
+ * lookup are run in parallel with Promise.all() instead of sequentially,
+ * saving one round-trip to the database.
+ *
  * Returns { decoded, user } on success, or { error: NextResponse } on failure.
  */
 export async function requireUser(req, allowedRoles) {
@@ -31,7 +36,41 @@ export async function requireUser(req, allowedRoles) {
     return { error: NextResponse.json({ message: 'Unauthorized' }, { status: 401 }) };
   }
 
-  const user = await prisma.user.findUnique({ where: { id: Number(decoded.userId) } });
+  if (decoded.role === 'designer') {
+    // Run user lookup and permissions lookup in parallel — saves one DB round-trip
+    const [user, permissions] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: Number(decoded.userId) },
+        select: { id: true, role: true, isSuspended: true },
+      }),
+      prisma.designerPermission.findMany({
+        where: { designerId: Number(decoded.userId) },
+        select: { doctorId: true },
+      }),
+    ]);
+
+    if (!user) {
+      return { error: NextResponse.json({ message: 'Unauthorized' }, { status: 401 }) };
+    }
+    if (user.isSuspended) {
+      return {
+        error: NextResponse.json(
+          { message: 'Your account has been suspended by the admin.', suspended: true },
+          { status: 403 }
+        ),
+      };
+    }
+
+    user.allowedDoctors = permissions.map((p) => p.doctorId);
+    return { decoded, user };
+  }
+
+  // For doctor / admin roles — single lookup, only fetch what is needed
+  const user = await prisma.user.findUnique({
+    where: { id: Number(decoded.userId) },
+    select: { id: true, role: true, isSuspended: true },
+  });
+
   if (!user) {
     return { error: NextResponse.json({ message: 'Unauthorized' }, { status: 401 }) };
   }
@@ -42,16 +81,6 @@ export async function requireUser(req, allowedRoles) {
         { status: 403 }
       ),
     };
-  }
-
-  // Mirrors Mongoose's User.allowedDoctors — only meaningful for designers,
-  // consumed by routes that gate case browse/pick access.
-  if (user.role === 'designer') {
-    const permissions = await prisma.designerPermission.findMany({
-      where: { designerId: user.id },
-      select: { doctorId: true },
-    });
-    user.allowedDoctors = permissions.map((p) => p.doctorId);
   }
 
   return { decoded, user };

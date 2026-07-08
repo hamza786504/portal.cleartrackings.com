@@ -39,30 +39,29 @@ export async function GET(req, { params }) {
     }
 
     // decoded.role === 'designer'
-    const fullCase = await prisma.case.findUnique({
+    // Fetch all needed fields in ONE query instead of two separate queries.
+    const caseDoc = await prisma.case.findUnique({
       where: { id: caseId },
-      select: { doctorId: true, pickedById: true, doctor: { select: { isSuspended: true } } },
+      include: {
+        pickedBy: { select: REF_SELECT },
+        doctor: { select: { isSuspended: true } },
+      },
     });
-    if (!fullCase) {
+    if (!caseDoc) {
       return NextResponse.json({ message: 'Case not found' }, { status: 404 });
     }
 
     // Allowed if this designer already picked it, or the admin has granted
     // them access to this case's (non-suspended) doctor.
-    const alreadyPicked = fullCase.pickedById != null && String(fullCase.pickedById) === decoded.userId;
+    const alreadyPicked = caseDoc.pickedById != null && String(caseDoc.pickedById) === decoded.userId;
     if (!alreadyPicked) {
       const isAllowed =
-        !fullCase.doctor.isSuspended &&
-        (user.allowedDoctors || []).some((docId) => String(docId) === String(fullCase.doctorId));
+        !caseDoc.doctor.isSuspended &&
+        (user.allowedDoctors || []).some((docId) => String(docId) === String(caseDoc.doctorId));
       if (!isAllowed) {
         return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
       }
     }
-
-    const caseDoc = await prisma.case.findUnique({
-      where: { id: caseId },
-      include: { pickedBy: { select: REF_SELECT } },
-    });
 
     return NextResponse.json(omit(serializeCase(caseDoc), ['doctorId', 'practiceName']));
   } catch (error) {

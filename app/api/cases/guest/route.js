@@ -66,19 +66,17 @@ export async function POST(req) {
       };
     };
 
-    const scanFileBuffers = await Promise.all(scanFilesRaw.map(toBufferObj));
-    const patientImageBuffers = await Promise.all(patientImagesRaw.map(toBufferObj));
+    // Convert all files to buffer objects in parallel
+    const [scanFileBuffers, patientImageBuffers] = await Promise.all([
+      Promise.all(scanFilesRaw.map(toBufferObj)),
+      Promise.all(patientImagesRaw.map(toBufferObj)),
+    ]);
 
-    // Upload files to Google Drive
-    let scanFiles = [];
-    let patientImages = [];
-
-    if (scanFileBuffers.length > 0) {
-      scanFiles = await driveService.uploadMultipleFiles(scanFileBuffers);
-    }
-    if (patientImageBuffers.length > 0) {
-      patientImages = await driveService.uploadMultipleFiles(patientImageBuffers);
-    }
+    // Upload scan files and patient images to Google Drive in parallel
+    const [scanFiles, patientImages] = await Promise.all([
+      scanFileBuffers.length > 0 ? driveService.uploadMultipleFiles(scanFileBuffers) : Promise.resolve([]),
+      patientImageBuffers.length > 0 ? driveService.uploadMultipleFiles(patientImageBuffers) : Promise.resolve([]),
+    ]);
 
     // Build the case row
     const caseData = {
