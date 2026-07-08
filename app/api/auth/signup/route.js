@@ -40,7 +40,7 @@ export async function POST(req) {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    await prisma.user.create({
+    const newUser = await prisma.user.create({
       data: {
         email: email.toLowerCase().trim(),
         password: hashedPassword,
@@ -71,6 +71,7 @@ export async function POST(req) {
       {
         message:
           'Registration successful! Your account is pending admin approval. You will be able to log in once approved.',
+        doctorId: newUser.id,
       },
       { status: 201 }
     );
