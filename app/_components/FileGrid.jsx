@@ -17,15 +17,24 @@ const thumbUrl = (id, size) => `https://drive.google.com/thumbnail?id=${id}&sz=w
  */
 export default function FileGrid({ files, emptyLabel }) {
   const [preview, setPreview] = useState(null);
+  const [previewIndex, setPreviewIndex] = useState(0);
 
   useEffect(() => {
     if (!preview) return;
     const onKeyDown = (e) => {
-      if (e.key === 'Escape') setPreview(null);
+      if (e.key === 'Escape') {
+        setPreview(null);
+      } else if (e.key === 'ArrowLeft') {
+        // Navigate to previous image
+        setPreviewIndex((prev) => Math.max(0, prev - 1));
+      } else if (e.key === 'ArrowRight') {
+        // Navigate to next image
+        setPreviewIndex((prev) => Math.min(files.length - 1, prev + 1));
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [preview]);
+  }, [preview, files]);
 
   if (!files || files.length === 0) {
     return <p className="mb-0 text-sm italic text-muted-foreground">{emptyLabel}</p>;
