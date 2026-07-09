@@ -292,9 +292,7 @@ export default function CaseDetailPage() {
           <Field label="Velocity" value={caseData.velocity === 'Other' ? caseData.otherVelocity : caseData.velocity} />
           <Field label="Case Type" value={caseData.caseType} />
           <Field label="Wear Schedule" value={caseData.wearSchedule} />
-          <Field label="Trimline Height" value={caseData.trimlineHeight} />
           <Field label="Retainer" value={caseData.retainer} />
-          <Field label="Plan Duration" value={caseData.planDuration} />
         </div>
       </Section>
 

@@ -49,9 +49,7 @@ export default function CreateCase() {
     otherVelocity: '',
     caseType: '3 3',
     wearSchedule: '2 Weeks',
-    trimlineHeight: '1 mm',
     retainer: 'YES',
-    planDuration: '6 months',
     doNotMoveTeeth: [],
     avoidAttachmentsTeeth: [],
     teethForExtraction: [],
@@ -157,7 +155,6 @@ export default function CreateCase() {
     }
     if (!formData.caseType) newErrors.caseType = 'Case type is required';
     if (!formData.wearSchedule) newErrors.wearSchedule = 'Wear Schedule is required';
-    if (!formData.trimlineHeight) newErrors.trimlineHeight = 'Trimline Height is required';
     if (!formData.retainer) newErrors.retainer = 'Retainer is required';
     if (formData.velocity === 'Other' && !formData.otherVelocity.trim()) {
       newErrors.otherVelocity = 'Please specify the velocity';
@@ -503,24 +500,13 @@ export default function CreateCase() {
                     <div>
                       <Label className="mb-1 text-sm font-semibold text-muted-foreground">Wear Schedule <span className="text-destructive">*</span></Label>
                       <div className="flex flex-wrap gap-2">
-                        {['1 Week', '2 Weeks', '3 Weeks'].map((opt) => (
+                        {['1 Week', '2 Weeks', '10 days'].map((opt) => (
                           <TogglePill key={opt} selected={formData.wearSchedule === opt} onClick={() => handleSelection('wearSchedule', opt)} disabled={isLoading}>
                             {opt}
                           </TogglePill>
                         ))}
                       </div>
                       {errors.wearSchedule && <div className="mt-1 text-sm text-destructive">{errors.wearSchedule}</div>}
-                    </div>
-                    <div>
-                      <Label className="mb-1 text-sm font-semibold text-muted-foreground">Trimline Height <span className="text-destructive">*</span></Label>
-                      <div className="flex flex-wrap gap-2">
-                        {['1 mm', '2 mm'].map((opt) => (
-                          <TogglePill key={opt} selected={formData.trimlineHeight === opt} onClick={() => handleSelection('trimlineHeight', opt)} disabled={isLoading}>
-                            {opt}
-                          </TogglePill>
-                        ))}
-                      </div>
-                      {errors.trimlineHeight && <div className="mt-1 text-sm text-destructive">{errors.trimlineHeight}</div>}
                     </div>
                     <div>
                       <Label className="mb-1 text-sm font-semibold text-muted-foreground">Retainer <span className="text-destructive">*</span></Label>
@@ -532,17 +518,6 @@ export default function CreateCase() {
                         ))}
                       </div>
                       {errors.retainer && <div className="mt-1 text-sm text-destructive">{errors.retainer}</div>}
-                    </div>
-                    <div>
-                      <Label className="mb-1 text-sm font-semibold text-muted-foreground">Plan Duration</Label>
-                      <Input
-                        type="text"
-                        className="bg-muted"
-                        name="planDuration"
-                        value={formData.planDuration}
-                        onChange={handleInputChange}
-                        disabled={isLoading}
-                      />
                     </div>
                   </div>
                 </div>

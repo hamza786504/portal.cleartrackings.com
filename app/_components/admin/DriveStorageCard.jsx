@@ -9,8 +9,12 @@ function formatBytes(bytes) {
 }
 
 /**
- * Google Drive storage usage tile for the admin dashboard, with a
- * low-space warning banner when free space drops below the 5GB threshold.
+ * Google Drive storage usage tile for the admin dashboard.
+ *
+ * The card and its content are ALWAYS rendered, independent of whether
+ * free space is low or high. The only conditional element is the
+ * low-space alert, which appears solely when free space drops below 5GB
+ * (quota.isLow). The card itself stays identical in both states.
  */
 export default function DriveStorageCard({ quota, loading }) {
   if (loading) {
@@ -23,13 +27,11 @@ export default function DriveStorageCard({ quota, loading }) {
     );
   }
 
-  if (!quota) return null;
-
-  const { limit, usage, free, usagePercent, isLow } = quota;
+  const { limit, usage, free, usagePercent, isLow } = quota || {};
 
   return (
     <>
-      {isLow && (
+      {quota && isLow && (
         <Alert variant="destructive" className="mb-4">
           <BsExclamationTriangleFill />
           <AlertTitle>Google Drive storage running low</AlertTitle>
@@ -45,16 +47,24 @@ export default function DriveStorageCard({ quota, loading }) {
               <BsCloudFill /> Google Drive Storage
             </div>
             <div className="text-sm text-muted-foreground">
-              {formatBytes(usage)} of {formatBytes(limit)} used
-              {free !== null && ` · ${formatBytes(free)} free`}
+              {quota ? (
+                <>
+                  {formatBytes(usage)} of {formatBytes(limit)} used
+                  {free !== null && ` · ${formatBytes(free)} free`}
+                </>
+              ) : (
+                'Storage info unavailable'
+              )}
             </div>
           </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className={`h-full rounded-full ${isLow ? 'bg-destructive' : 'bg-primary'}`}
-              style={{ width: `${Math.min(usagePercent ?? 0, 100)}%` }}
-            />
-          </div>
+          {quota && (
+            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary"
+                style={{ width: `${Math.min(usagePercent ?? 0, 100)}%` }}
+              />
+            </div>
+          )}
         </CardContent>
       </Card>
     </>

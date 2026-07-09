@@ -69,9 +69,7 @@ export default function DoctorSignup() {
     otherVelocity:      '',
     caseType:           '3 3',
     wearSchedule:       '2 Weeks',
-    trimlineHeight:     '1 mm',
     retainer:           'YES',
-    planDuration:       '6 months',
     doNotMoveTeeth:     [],
     avoidAttachmentsTeeth: [],
     teethForExtraction: [],
@@ -194,8 +192,7 @@ export default function DoctorSignup() {
     if (!caseData.impressionsTaken.length) errs.impressionsTaken = 'Please select at least one impression';
     if (!caseData.caseType)              errs.caseType       = 'Case type is required';
     if (!caseData.wearSchedule)          errs.wearSchedule   = 'Wear Schedule is required';
-    if (!caseData.trimlineHeight)        errs.trimlineHeight = 'Trimline Height is required';
-    if (!caseData.retainer)              errs.retainer       = 'Retainer is required';
+        if (!caseData.retainer)              errs.retainer       = 'Retainer is required';
     if (caseData.velocity === 'Other' && !caseData.otherVelocity.trim())
       errs.otherVelocity = 'Please specify the velocity';
     if (!caseData.treatmentPlan)         errs.treatmentPlan  = 'Treatment Plan is required';
@@ -673,23 +670,14 @@ export default function DoctorSignup() {
                   <div>
                     <Label className="mb-1 text-sm font-semibold text-muted-foreground">Wear Schedule <span className="text-destructive">*</span></Label>
                     <div className="flex flex-wrap gap-2">
-                      {['1 Week', '2 Weeks', '3 Weeks'].map((opt) => (
+                      {['1 Week', '2 Weeks', '10 days'].map((opt) => (
                         <TogglePill key={opt} selected={caseData.wearSchedule === opt} onClick={() => handleSelection('wearSchedule', opt)} disabled={loading}>{opt}</TogglePill>
                       ))}
                     </div>
                     {errors.wearSchedule && <div className="mt-1 text-sm text-destructive">{errors.wearSchedule}</div>}
                   </div>
 
-                  <div>
-                    <Label className="mb-1 text-sm font-semibold text-muted-foreground">Trimline Height <span className="text-destructive">*</span></Label>
-                    <div className="flex flex-wrap gap-2">
-                      {['1 mm', '2 mm'].map((opt) => (
-                        <TogglePill key={opt} selected={caseData.trimlineHeight === opt} onClick={() => handleSelection('trimlineHeight', opt)} disabled={loading}>{opt}</TogglePill>
-                      ))}
-                    </div>
-                    {errors.trimlineHeight && <div className="mt-1 text-sm text-destructive">{errors.trimlineHeight}</div>}
-                  </div>
-
+                  
                   <div>
                     <Label className="mb-1 text-sm font-semibold text-muted-foreground">Retainer <span className="text-destructive">*</span></Label>
                     <div className="flex flex-wrap gap-2">
@@ -698,11 +686,6 @@ export default function DoctorSignup() {
                       ))}
                     </div>
                     {errors.retainer && <div className="mt-1 text-sm text-destructive">{errors.retainer}</div>}
-                  </div>
-
-                  <div>
-                    <Label className="mb-1 text-sm font-semibold text-muted-foreground">Plan Duration</Label>
-                    <Input type="text" className="bg-muted" name="planDuration" value={caseData.planDuration} onChange={handleCaseInput} disabled={loading} />
                   </div>
                 </div>
               </div>
@@ -877,7 +860,7 @@ export default function DoctorSignup() {
                 </Alert>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   {renderFileDropzone('scanFiles',     'Scan Files',     BsEye,       'bg-primary', 'Upload 3D model files (.stl, .obj) or compressed files (.zip, .rar, .7z)')}
-                  {renderFileDropzone('patientImages', 'Patient Images', BsCardImage, 'bg-success', 'Upload patient photos and scans')}
+                  {renderFileDropzone('patientImages', 'Patient Images & Xray', BsCardImage, 'bg-success', 'Upload patient photos and scans')}
                 </div>
               </div>
             </div>

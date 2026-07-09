@@ -67,9 +67,7 @@ model Case {
 
   caseType       String
   wearSchedule   String
-  trimlineHeight String
   retainer       String
-  planDuration   String?
 
   doNotMoveTeeth        Json @default("[]")
   avoidAttachmentsTeeth Json @default("[]")

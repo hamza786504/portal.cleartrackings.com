@@ -480,19 +480,11 @@ export default function CaseDetailPage() {
               <h6 className="mt-3 mb-2 font-semibold text-muted-foreground">Manufacturing</h6>
               <div>
                 <Label className="mb-1 text-sm font-semibold text-muted-foreground">Wear Schedule</Label>
-                <PillRow options={['1 Week', '2 Weeks', '3 Weeks']} value={caseData.wearSchedule} />
-              </div>
-              <div>
-                <Label className="mb-1 text-sm font-semibold text-muted-foreground">Trimline Height</Label>
-                <PillRow options={['1 mm', '2 mm']} value={caseData.trimlineHeight} />
+                <PillRow options={['1 Week', '2 Weeks', '10 days']} value={caseData.wearSchedule} />
               </div>
               <div>
                 <Label className="mb-1 text-sm font-semibold text-muted-foreground">Retainer</Label>
                 <PillRow options={['YES', 'NO']} value={caseData.retainer} />
-              </div>
-              <div>
-                <Label className="mb-1 text-sm font-semibold text-muted-foreground">Plan Duration</Label>
-                <Input className="bg-muted" value={caseData.planDuration || ''} disabled />
               </div>
             </div>
           </div>
@@ -607,7 +599,7 @@ export default function CaseDetailPage() {
                 emptyLabel="No scan files uploaded."
               />
               <FileBox
-                title="Patient Images"
+                title="Patient Images & Xray"
                 Icon={BsCardImage}
                 iconBgClassName="bg-success"
                 files={caseData.patientImages}
