@@ -72,10 +72,25 @@ export async function POST(req) {
       Promise.all(patientImagesRaw.map(toBufferObj)),
     ]);
 
+    // Create a dedicated Drive folder for this case named
+    // "[YYYY-MM-DD] - [patient name]" and upload files into it. Fall back to
+    // the root folder if creation fails so submission still succeeds.
+    let folderInfo = { caseFolderId: null, caseFolderName: null, chatFolderId: null };
+    try {
+      const start = new Date();
+      const ymd = start.toISOString().slice(0, 10);
+      const folderName = `${ymd} - ${fields.patientName?.trim() || 'Unnamed Patient'}`;
+      folderInfo = await driveService.ensureCaseFolders(folderName);
+    } catch (driveErr) {
+      console.error('Case Drive folder creation failed (continuing with root):', driveErr);
+    }
+
+    const caseFolderId = folderInfo.caseFolderId || null;
+
     // Upload scan files and patient images to Google Drive in parallel
     const [scanFiles, patientImages] = await Promise.all([
-      scanFileBuffers.length > 0 ? driveService.uploadMultipleFiles(scanFileBuffers) : Promise.resolve([]),
-      patientImageBuffers.length > 0 ? driveService.uploadMultipleFiles(patientImageBuffers) : Promise.resolve([]),
+      scanFileBuffers.length > 0 ? driveService.uploadMultipleFiles(scanFileBuffers, caseFolderId) : Promise.resolve([]),
+      patientImageBuffers.length > 0 ? driveService.uploadMultipleFiles(patientImageBuffers, caseFolderId) : Promise.resolve([]),
     ]);
 
     // Build the case row
@@ -119,6 +134,9 @@ export async function POST(req) {
       treatmentPlan: fields.treatmentPlan || '',
       scanFiles,
       patientImages,
+      googleDriveFolderId: folderInfo.caseFolderId,
+      caseFolderName: folderInfo.caseFolderName,
+      chatFolderId: folderInfo.chatFolderId,
       status: 'pending',
     };
 

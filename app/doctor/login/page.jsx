@@ -130,6 +130,12 @@ export default function DoctorLogin() {
 
           <div className="mt-3 flex flex-col items-center gap-1 text-center">
             <small className="text-muted-foreground">
+              Forgot your password?{' '}
+              <Link href="/doctor/forgot-password" className="font-semibold text-primary no-underline">
+                Reset it here
+              </Link>
+            </small>
+            <small className="text-muted-foreground">
               New doctor?{' '}
               <Link href="/doctor/signup" className="font-semibold text-primary no-underline">
                 Request an account

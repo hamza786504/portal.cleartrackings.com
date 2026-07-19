@@ -3,6 +3,7 @@ export const STATUS_VARIANTS = {
   'in-progress': { label: 'In Progress', className: 'bg-primary text-primary-foreground' },
   delivered: { label: 'Awaiting Approval', className: 'bg-info text-info-foreground' },
   completed: { label: 'Completed', className: 'bg-success text-success-foreground' },
+  hold: { label: 'On Hold', className: 'bg-destructive text-destructive-foreground' },
 };
 
 export function getStatusVariant(status) {

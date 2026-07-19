@@ -112,3 +112,36 @@ export function decodeToken(token) {
     return null;
   }
 }
+
+/**
+ * Generate a strong, random temporary password (14 chars) that mixes
+ * uppercase, lowercase, digits, and symbols. Used by the admin "reset
+ * password" flow — the plaintext is returned to the admin exactly once and
+ * is NEVER persisted (only its bcrypt hash is stored), so it can't be
+ * retrieved a second time.
+ */
+export function generateTemporaryPassword(length = 14) {
+  const crypto = require('crypto');
+  const UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const LOWER = 'abcdefghijkmnopqrstuvwxyz';
+  const DIGIT = '23456789';
+  const SYMBOL = '!@#$%&*?';
+  const ALL = UPPER + LOWER + DIGIT + SYMBOL;
+
+  const pick = (set) => set[crypto.randomInt(0, set.length)];
+
+  // Guarantee at least one of each character class.
+  const required = [pick(UPPER), pick(LOWER), pick(DIGIT), pick(SYMBOL)];
+  const rest = [];
+  for (let i = required.length; i < length; i++) {
+    rest.push(pick(ALL));
+  }
+
+  // Shuffle so the required chars aren't always at the front.
+  const chars = [...required, ...rest];
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = crypto.randomInt(0, i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join('');
+}

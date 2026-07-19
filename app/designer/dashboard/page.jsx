@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import {
   BsGridFill,
@@ -17,8 +17,10 @@ import StatCard from '@/app/_components/shared/StatCard';
 import { Button } from '@/app/_components/ui/button';
 import Spinner from '@/app/_components/shared/Spinner';
 
+const RECENT_LIMIT = 10;
+
 export default function Dashboard() {
-  const [cases, setCases] = useState([]);
+  const [allRows, setAllRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     total: 0,
@@ -27,23 +29,54 @@ export default function Dashboard() {
     completed: 0,
   });
 
-  const fetchCases = async () => {
+  const fetchData = async () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
       const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
-      const res = await fetch('/api/cases?scope=all', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      const list = Array.isArray(data) ? data : [];
-      setCases(list);
+      const [casesRes, revsRes] = await Promise.all([
+        fetch('/api/cases?scope=all', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/revisions?scope=all', { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
 
-      // Compute stats
-      const total = list.length;
-      const available = list.filter((c) => !c.pickedBy).length;
-      const mine = list.filter((c) => c.pickedBy?._id === storedUser.id).length;
-      const completed = list.filter(
+      const casesData = await casesRes.json();
+      const cases = Array.isArray(casesData) ? casesData : [];
+      const revsData = await revsRes.json();
+      const revisions = Array.isArray(revsData) ? revsData : [];
+
+      // Cases + revisions merged into one unified, date-sorted list so the
+      // "Recent Cases" table surfaces pickable revisions interleaved with cases.
+      const caseRows = cases.map((c) => ({
+        kind: 'case',
+        _id: c._id,
+        patientName: c.patientName,
+        description: c.chiefComplaint || '—',
+        caseType: c.caseType || '—',
+        status: c.revisionStatus ?? c.status,
+        pickedBy: c.pickedBy || null,
+        createdAt: c.createdAt,
+      }));
+      const revRows = revisions.map((r) => ({
+        kind: 'revision',
+        _id: r._id,
+        patientName: r.case?.patientName || '—',
+        description: r.specialNote ? `Revision: ${r.specialNote}` : 'Revision',
+        caseType: 'Revision',
+        status: r.status,
+        pickedBy: r.pickedBy || null,
+        createdAt: r.createdAt,
+      }));
+
+      const combined = [...caseRows, ...revRows].sort(
+        (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+      );
+      setAllRows(combined);
+
+      // Compute stats over the unified list (cases + revisions are both pickable).
+      const total = combined.length;
+      const available = combined.filter((c) => !c.pickedBy).length;
+      const mine = combined.filter((c) => c.pickedBy?._id === storedUser.id).length;
+      const completed = combined.filter(
         (c) => c.pickedBy?._id === storedUser.id && c.status === 'completed'
       ).length;
       setStats({ total, available, mine, completed });
@@ -55,10 +88,11 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    fetchCases();
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handlePick = async (id) => {
+  const handlePickCase = async (id) => {
     const token = localStorage.getItem('token');
     const res = await fetch(`/api/cases/${id}/pick`, {
       method: 'PATCH',
@@ -69,8 +103,33 @@ export default function Dashboard() {
       alert(data.message || 'Failed to pick case.');
       return;
     }
-    await fetchCases();
+    await fetchData();
   };
+
+  const handlePickRevision = async (id) => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`/api/revisions/${id}/pick`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.message || 'Failed to pick revision.');
+      return;
+    }
+    await fetchData();
+  };
+
+  // Attach per-row view/pick behavior and slice to the recent-items limit.
+  const pageRows = useMemo(() => {
+    return allRows.slice(0, RECENT_LIMIT).map((r) => ({
+      ...r,
+      viewHref: r.kind === 'revision' ? `/designer/revisions/${r._id}` : `/designer/cases/${r._id}`,
+      canPick: !r.pickedBy,
+      pick: r.kind === 'revision' ? () => handlePickRevision(r._id) : () => handlePickCase(r._id),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allRows]);
 
   const statCards = [
     {
@@ -148,11 +207,11 @@ export default function Dashboard() {
         <div className="flex items-center justify-center py-5">
           <div className="text-center">
             <Spinner className="size-6" />
-            <p className="mt-3 text-sm text-muted-foreground">Fetching cases...</p>
+            <p className="mt-3 text-muted-foreground">Fetching cases...</p>
           </div>
         </div>
       ) : (
-        <CaseTable cases={cases.slice(0, 10)} scope="all" onPick={handlePick} />
+        <CaseTable rows={pageRows} scope="all" />
       )}
     </DashboardShell>
   );

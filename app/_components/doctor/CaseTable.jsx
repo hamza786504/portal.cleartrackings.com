@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { BsFolder2Open, BsPlusLg, BsUnlock, BsEye } from 'react-icons/bs';
+import { BsFolder2Open, BsPlusLg, BsUnlock, BsEye, BsArrowRepeat } from 'react-icons/bs';
 import { Card, CardContent, CardFooter } from '@/app/_components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/app/_components/ui/table';
 import { Badge } from '@/app/_components/ui/badge';
@@ -42,6 +42,7 @@ export default function CaseTable({ cases, status = 'all' }) {
               <TableHead className="py-3 px-3 text-muted-foreground">Chief Complaint</TableHead>
               <TableHead className="py-3 px-3 text-muted-foreground">Case Type</TableHead>
               <TableHead className="py-3 px-3 text-muted-foreground">Status</TableHead>
+              <TableHead className="py-3 px-3 text-muted-foreground">Paid</TableHead>
               <TableHead className="py-3 px-3 text-muted-foreground">Picked By</TableHead>
               <TableHead className="py-3 px-3 text-muted-foreground">Date</TableHead>
               <TableHead className="py-3 px-3 text-muted-foreground">Actions</TableHead>
@@ -72,7 +73,16 @@ export default function CaseTable({ cases, status = 'all' }) {
                     <Badge variant="outline" className="bg-muted">{c.caseType || '—'}</Badge>
                   </TableCell>
                   <TableCell className="px-3">
-                    <StatusBadge status={c.status} />
+                    <StatusBadge status={c.revisionStatus ?? c.status} />
+                  </TableCell>
+                  <TableCell className="px-3">
+                    <input
+                      type="checkbox"
+                      aria-label={`Case ${c.patientName} payment status`}
+                      className="size-4 cursor-not-allowed accent-success"
+                      checked={!!c.paid}
+                      disabled
+                    />
                   </TableCell>
                   <TableCell className="px-3">
                     {pickedBy ? (
@@ -90,11 +100,20 @@ export default function CaseTable({ cases, status = 'all' }) {
                   </TableCell>
                   <TableCell className="px-3 text-muted-foreground">{createdDate}</TableCell>
                   <TableCell className="px-3">
-                    <Button asChild variant="outline" size="sm" className="w-fit gap-1 whitespace-nowrap">
-                      <Link href={`/doctor/cases/${c._id}`}>
-                        <BsEye /> View
-                      </Link>
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button asChild variant="outline" size="sm" className="w-fit gap-1 whitespace-nowrap">
+                        <Link href={`/doctor/cases/${c._id}`}>
+                          <BsEye /> View
+                        </Link>
+                      </Button>
+                      {c.status === 'completed' && (
+                        <Button asChild variant="outline" size="sm" className="w-fit gap-1 whitespace-nowrap border-primary text-primary hover:bg-primary/10">
+                          <Link href={`/doctor/cases/${c._id}?newRevision=1`}>
+                            <BsArrowRepeat /> New Revision
+                          </Link>
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               );

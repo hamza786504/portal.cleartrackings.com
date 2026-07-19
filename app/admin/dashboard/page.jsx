@@ -74,12 +74,24 @@ export default function AdminDashboard() {
     fetchDriveQuota();
   }, []);
 
+  // Keep a toggled row (paid flag, status, designer) fresh in place instead
+  // of waiting for a manual reload — mirrors /admin/cases.
+  const handleCaseUpdated = (updatedCase) => {
+    setCases((prev) => prev.map((c) => (c._id === updatedCase._id ? updatedCase : c)));
+  };
+  const handleCasesDeleted = (ids) => {
+    const set = new Set(ids);
+    setCases((prev) => prev.filter((c) => !set.has(c._id)));
+  };
+
   const pendingDoctors = doctors.filter((d) => !d.isApproved).length;
   const pendingDesigners = designers.filter((d) => !d.isApproved).length;
-  const pending = cases.filter((c) => c.status === 'pending').length;
-  const inProgress = cases.filter((c) => c.status === 'in-progress').length;
-  const delivered = cases.filter((c) => c.status === 'delivered').length;
-  const completed = cases.filter((c) => c.status === 'completed').length;
+  // Count by EFFECTIVE status so a reopened case is tallied by its revision.
+  const eff = (c) => c.revisionStatus ?? c.status;
+  const pending = cases.filter((c) => eff(c) === 'pending').length;
+  const inProgress = cases.filter((c) => eff(c) === 'in-progress').length;
+  const delivered = cases.filter((c) => eff(c) === 'delivered').length;
+  const completed = cases.filter((c) => eff(c) === 'completed').length;
 
   const statCards = [
     { label: 'Total Cases', value: cases.length, icon: BsFiles, iconClassName: 'text-foreground', iconBgClassName: 'bg-muted', link: '/admin/cases' },
@@ -134,7 +146,11 @@ export default function AdminDashboard() {
           </div>
         </div>
       ) : (
-        <CaseTable cases={cases.slice(0, 10)} />
+        <CaseTable
+          cases={cases.slice(0, 10)}
+          onCasesChange={handleCaseUpdated}
+          onCasesDeleted={handleCasesDeleted}
+        />
       )}
     </DashboardShell>
   );

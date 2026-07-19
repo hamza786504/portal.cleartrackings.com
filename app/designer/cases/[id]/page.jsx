@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import {
   BsExclamationTriangleFill,
   BsArrowLeft,
+  BsArrowRepeat,
   BsFileEarmarkMedical,
   BsPersonCheckFill,
   BsHourglassSplit,
@@ -49,6 +50,7 @@ const STATUS_CONFIG = {
   'in-progress': { label: 'In Progress' },
   delivered: { label: 'Delivered — Awaiting Approval' },
   completed: { label: 'Completed' },
+  hold: { label: 'On Hold' },
 };
 
 const UPPER_RIGHT = ['18', '17', '16', '15', '14', '13', '12', '11'];
@@ -146,6 +148,11 @@ export default function CaseDetailPage() {
   const [deliverLoading, setDeliverLoading] = useState(false);
   const [deliverError, setDeliverError] = useState('');
 
+  // Revisions re-opened on this case — visible here (designer) just like on
+  // the doctor & admin case pages, so the designer can see the doctor-uploaded
+  // files and jump into working on a revision.
+  const [revisions, setRevisions] = useState([]);
+
   const fetchCase = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -174,9 +181,25 @@ export default function CaseDetailPage() {
     }
   }, []);
 
+  const fetchRevisions = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/cases/${id}/revisions`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRevisions(Array.isArray(data) ? data : []);
+      }
+    } catch {
+      // Non-fatal — the case still renders without the revisions list.
+    }
+  };
+
   useEffect(() => {
     if (!id) return;
     fetchCase();
+    fetchRevisions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -262,10 +285,33 @@ export default function CaseDetailPage() {
     ? `${caseData.pickedBy.firstName} ${caseData.pickedBy.lastName}`
     : null;
   const isMine = caseData.pickedBy?._id === currentUserId;
+  // A designer who picked any revision of this case shares the parent case's
+  // chat thread, so they should see/post in it here too (not just on the
+  // revision detail page).
+  const hasRevisionPick = revisions.some((r) => r.pickedBy?._id === currentUserId);
+  // Reopened cases surface the latest revision's status instead of the parent
+  // case's "completed" status.
+  const displayStatus = caseData.revisionStatus ?? caseData.status;
   const priceDetails = getPriceDetails(caseData.treatmentPlan);
+  const isOnHold = caseData.status === 'hold';
 
   return (
     <DashboardShell>
+      {isOnHold && (
+        <Alert variant="destructive" className="mb-4 gap-2 border-0 bg-destructive/10">
+          <BsExclamationTriangleFill />
+          <AlertDescription>
+            <span>This case is on hold by the admin, so you can&apos;t edit it right now.</span>
+            {caseData.holdReason ? (
+              <span className="mt-1 block">
+                <strong>Reason:</strong> {caseData.holdReason}
+              </span>
+            ) : null}
+            <span className="mt-1 block">It will be available again once the admin changes its status.</span>
+          </AlertDescription>
+        </Alert>
+      )}
+      <div className={isOnHold ? 'pointer-events-none opacity-50 select-none' : ''}>
       {/* Header */}
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -283,7 +329,7 @@ export default function CaseDetailPage() {
             })}
           </p>
         </div>
-        <StatusBadge status={caseData.status} label={STATUS_CONFIG[caseData.status]?.label} className="px-3 py-2 text-sm" />
+        <StatusBadge status={displayStatus} label={STATUS_CONFIG[displayStatus]?.label} className="px-3 py-2 text-sm" />
       </div>
 
       {/* Pickup Status */}
@@ -383,8 +429,10 @@ export default function CaseDetailPage() {
         )}
       </Section>
 
-      {/* Case Chat */}
-      {isMine ? (
+      {/* Case Chat — a designer who picked any revision of this case shares the
+          parent case's chat thread, so show it here too (not just on the
+          revision detail page). */}
+      {isMine || hasRevisionPick ? (
         <CaseChat caseId={id} canSend={true} />
       ) : (
         !pickedBy && (
@@ -609,6 +657,101 @@ export default function CaseDetailPage() {
           </div>
         </CardContent>
       </Card>
+      {/* Revisions — re-opened work on this completed case. Shown here (designer)
+          just like on the doctor & admin case pages, so the designer can see the
+          doctor-uploaded scan files / images and jump into working on a revision.
+          Persisted via fetchRevisions() on mount, and iterates over every revision. */}
+      {revisions.length > 0 && (
+        <Section title={`Revisions (${revisions.length})`} icon={BsArrowRepeat}>
+          <div className="flex flex-col gap-4">
+            {revisions.map((r, index) => {
+              const revNumber = revisions.length - index;
+              const pickedBy = r.pickedBy ? `${r.pickedBy.firstName} ${r.pickedBy.lastName}` : null;
+              const isMine = r.pickedBy?._id === currentUserId;
+              return (
+                <Card key={r._id} className="border shadow-sm">
+                  <CardContent className="p-4">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <strong className="text-base">Revision #{revNumber}</strong>
+                        <StatusBadge status={r.status} />
+                      </div>
+                      <span className="text-sm text-muted-foreground">
+                        Created {new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    </div>
+
+                    {r.specialNote && (
+                      <div className="mb-3">
+                        <div className="mb-1 text-sm font-semibold text-muted-foreground">Special Note</div>
+                        <div className="whitespace-pre-wrap rounded-md bg-muted p-3 text-sm">{r.specialNote}</div>
+                      </div>
+                    )}
+
+                    {/* The doctor-uploaded files the designer needs to work from */}
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div>
+                        <h6 className="mb-2 flex items-center gap-1 text-sm font-semibold text-muted-foreground">
+                          <BsEye className="text-primary" /> Scan Files ({r.scanFiles?.length || 0})
+                        </h6>
+                        <FileGrid files={r.scanFiles} emptyLabel="No scan files uploaded." />
+                      </div>
+                      <div>
+                        <h6 className="mb-2 flex items-center gap-1 text-sm font-semibold text-muted-foreground">
+                          <BsCardImage className="text-success" /> Patient Images ({r.patientImages?.length || 0})
+                        </h6>
+                        <FileGrid files={r.patientImages} emptyLabel="No patient images uploaded." />
+                      </div>
+                    </div>
+
+                    {r.designLink && (
+                      <div className="mt-3">
+                        <div className="mb-1 text-sm font-semibold text-muted-foreground">Delivered Design Link</div>
+                        <a href={r.designLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2">
+                          {r.designLink} <BsBoxArrowUpRight className="text-sm" />
+                        </a>
+                        {r.deliveredAt && (
+                          <p className="mt-1 mb-0 text-sm text-muted-foreground">
+                            Delivered on {new Date(r.deliveredAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                          </p>
+                        )}
+                        {r.status === 'completed' && r.approvedAt && (
+                          <p className="mt-2 mb-0 text-sm text-muted-foreground">
+                            Approved on {new Date(r.approvedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-sm text-muted-foreground">
+                        {pickedBy ? `Picked by ${pickedBy}` : 'Not picked up yet'}
+                      </span>
+                      {/* Leads to the revision detail page where the designer picks
+                          the revision and submits the design link (mirrors the
+                          case deliver form). */}
+                      <Button size="sm" className="gap-2" onClick={() => router.push(`/designer/revisions/${r._id}`)}>
+                        <BsArrowRepeat /> {isMine ? 'Continue Working' : 'Work on Revision'}
+                      </Button>
+                    </div>
+
+                    {r.status === 'hold' && r.holdReason && (
+                      <Alert variant="destructive" className="mt-3 border-0 bg-destructive/10">
+                        <BsExclamationTriangleFill />
+                        <AlertDescription>
+                          <span className="font-semibold">On hold:</span> {r.holdReason}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </Section>
+      )}
+
+      </div>
     </DashboardShell>
   );
 }

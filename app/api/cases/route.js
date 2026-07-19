@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/app/lib/prisma';
 import { requireUser } from '@/app/lib/auth';
-import { serializeCase, omit } from '@/app/lib/serialize';
+import { serializeCase, omit, computeRevisionStatus } from '@/app/lib/serialize';
 import driveService from '@/app/lib/googleDrive';
 
 // Array field names that should be parsed as arrays
@@ -67,11 +67,43 @@ export async function POST(req) {
       Promise.all(patientImagesRaw.map(toBufferObj)),
     ]);
 
-    // Upload scan files and patient images to Google Drive in parallel
-    const [scanFiles, patientImages] = await Promise.all([
-      scanFileBuffers.length > 0 ? driveService.uploadMultipleFiles(scanFileBuffers) : Promise.resolve([]),
-      patientImageBuffers.length > 0 ? driveService.uploadMultipleFiles(patientImageBuffers) : Promise.resolve([]),
-    ]);
+    // Create a dedicated Drive folder for this case named
+    // "[YYYY-MM-DD] - [patient name]" and upload files into it. If the folder
+    // can't be created (Drive hiccup) we fall back to the root folder and
+    // still create the case so submission never fails.
+    let folderInfo = { caseFolderId: null, caseFolderName: null, chatFolderId: null };
+    try {
+      const start = new Date();
+      const ymd = start.toISOString().slice(0, 10);
+      const folderName = `${ymd} - ${fields.patientName?.trim() || 'Unnamed Patient'}`;
+      folderInfo = await driveService.ensureCaseFolders(folderName);
+    } catch (driveErr) {
+      console.error('Case Drive folder creation failed (continuing with root):', driveErr);
+    }
+
+    const caseFolderId = folderInfo.caseFolderId || null;
+
+    // Upload scan files and patient images to Google Drive in parallel.
+    // A Drive failure (auth/quota/etc.) must NOT block the case from being
+    // created — mirror the resilient behavior of signup-with-case.
+    let scanFiles = [];
+    let patientImages = [];
+    try {
+      [scanFiles, patientImages] = await Promise.all([
+        scanFileBuffers.length > 0 ? driveService.uploadMultipleFiles(scanFileBuffers, caseFolderId) : Promise.resolve([]),
+        patientImageBuffers.length > 0 ? driveService.uploadMultipleFiles(patientImageBuffers, caseFolderId) : Promise.resolve([]),
+      ]);
+    } catch (uploadErr) {
+      const driveReason =
+        uploadErr?.errors?.[0]?.reason ||
+        uploadErr?.response?.data?.error?.errors?.[0]?.reason ||
+        uploadErr?.response?.data?.error?.status ||
+        uploadErr?.cause?.message ||
+        null;
+      console.error('Case file upload failed (case will still be created):', uploadErr?.message || uploadErr);
+      if (driveReason) console.error('   ↳ Drive/auth reason:', driveReason);
+      // Continue with empty file arrays so the case row is still saved.
+    }
 
     // Build the case row
     const caseData = {
@@ -114,6 +146,9 @@ export async function POST(req) {
       treatmentPlan: fields.treatmentPlan || '',
       scanFiles,
       patientImages,
+      googleDriveFolderId: folderInfo.caseFolderId,
+      caseFolderName: folderInfo.caseFolderName,
+      chatFolderId: folderInfo.chatFolderId,
       status: 'pending',
     };
 
@@ -167,12 +202,7 @@ export async function GET(req) {
     let redact = false;
 
     if (decoded.role === 'doctor') {
-      const status = searchParams.get('status');
-
       where = { doctorId: Number(decoded.userId) };
-      if (status && status !== '' && status !== 'all') {
-        where.status = status;
-      }
     } else {
       // decoded.role === 'designer'
       const scope = searchParams.get('scope') || 'all';
@@ -196,10 +226,67 @@ export async function GET(req) {
       }
     }
 
-    const finalize = (c) => {
-      const obj = serializeCase(c);
-      return redact ? omit(obj, ['doctorId', 'practiceName']) : obj;
+    // For designers, a reopened case (one with revisions) should display the
+    // latest revision's status instead of the parent case's "completed" status.
+    // Build a caseId -> effective status map once, then attach it to each row.
+    const buildRevisionStatusMap = async (caseIds) => {
+      const map = new Map();
+      if (caseIds.length === 0) return map;
+      const revs = await prisma.revision.findMany({
+        where: { caseId: { in: caseIds } },
+        select: { caseId: true, status: true, createdAt: true },
+      });
+      const grouped = new Map();
+      for (const r of revs) {
+        if (!grouped.has(r.caseId)) grouped.set(r.caseId, []);
+        grouped.get(r.caseId).push(r);
+      }
+      for (const [caseId, list] of grouped) {
+        const status = computeRevisionStatus(list);
+        if (status) map.set(caseId, status);
+      }
+      return map;
     };
+
+    const finalize = (c, revMap) => {
+      const obj = serializeCase(c);
+      const out = redact ? omit(obj, ['doctorId', 'practiceName']) : obj;
+      if (revMap && revMap.has(c.id)) out.revisionStatus = revMap.get(c.id);
+      return out;
+    };
+
+    // Doctors filter by the EFFECTIVE status — the case's own status, or the
+    // latest revision's status when the case has been reopened. Resolve it in
+    // memory so the status tabs stay consistent with the badge the table shows.
+    if (decoded.role === 'doctor') {
+      const allCases = await prisma.case.findMany({
+        where,
+        include: { pickedBy: { select: PICKED_BY_SELECT } },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+      });
+      const revMap = await buildRevisionStatusMap(allCases.map((c) => c.id));
+      let finalized = allCases.map((c) => finalize(c, revMap));
+
+      const status = searchParams.get('status');
+      if (status && status !== '' && status !== 'all') {
+        finalized = finalized.filter((c) => (c.revisionStatus ?? c.status) === status);
+      }
+
+      if (!paginate) {
+        return NextResponse.json(finalized);
+      }
+      const filteredTotal = finalized.length;
+      const filteredPages = Math.max(1, Math.ceil(filteredTotal / pageSize));
+      const start = (page - 1) * pageSize;
+      return NextResponse.json({
+        cases: finalized.slice(start, start + pageSize),
+        total: filteredTotal,
+        page,
+        pageSize,
+        totalPages: filteredPages,
+      });
+    }
 
     if (!paginate) {
       // Safety cap: without pagination, limit to 500 rows to prevent a single
@@ -210,8 +297,9 @@ export async function GET(req) {
         orderBy: { createdAt: 'desc' },
         take: 500,
       });
+      const revMap = await buildRevisionStatusMap(cases.map((c) => c.id));
 
-      return NextResponse.json(cases.map(finalize));
+      return NextResponse.json(cases.map((c) => finalize(c, revMap)));
     }
 
     const [cases, total] = await Promise.all([
@@ -224,9 +312,10 @@ export async function GET(req) {
       }),
       prisma.case.count({ where }),
     ]);
+    const revMap = await buildRevisionStatusMap(cases.map((c) => c.id));
 
     return NextResponse.json({
-      cases: cases.map(finalize),
+      cases: cases.map((c) => finalize(c, revMap)),
       total,
       page,
       pageSize,

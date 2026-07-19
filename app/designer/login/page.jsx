@@ -130,6 +130,12 @@ export default function DesignerLogin() {
 
           <div className="mt-3 flex flex-col items-center gap-1 text-center">
             <small className="text-muted-foreground">
+              Forgot your password?{' '}
+              <Link href="/designer/forgot-password" className="font-semibold text-foreground no-underline">
+                Reset it here
+              </Link>
+            </small>
+            <small className="text-muted-foreground">
               New designer?{' '}
               <Link href="/designer/signup" className="font-semibold text-foreground no-underline">
                 Request an account

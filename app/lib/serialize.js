@@ -26,6 +26,17 @@ export function serializeCase(row) {
   };
 }
 
+export function serializeRevision(row) {
+  if (!row) return null;
+  const { id, doctorId, pickedById, doctor, pickedBy, ...rest } = row;
+  return {
+    _id: String(id),
+    ...rest,
+    doctorId: doctor !== undefined ? serializeUserRef(doctor) : doctorId != null ? String(doctorId) : doctorId,
+    pickedBy: pickedBy !== undefined ? serializeUserRef(pickedBy) : pickedById != null ? String(pickedById) : null,
+  };
+}
+
 export function serializeMessage(row) {
   if (!row) return null;
   const { id, senderId, sender, ...rest } = row;
@@ -51,4 +62,17 @@ export function omit(obj, keys) {
   const copy = { ...obj };
   for (const k of keys) delete copy[k];
   return copy;
+}
+
+// Designer-facing status for a case that has been reopened as one or more
+// revisions: show the latest revision's status, and only fall back to
+// "completed" when EVERY revision is completed. Returns null when the case has
+// no revisions, so callers can leave the real case status untouched.
+export function computeRevisionStatus(revisions) {
+  if (!Array.isArray(revisions) || revisions.length === 0) return null;
+  const sorted = [...revisions].sort(
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+  );
+  const allCompleted = sorted.every((r) => r.status === 'completed');
+  return allCompleted ? 'completed' : sorted[0].status;
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import {
   BsExclamationTriangleFill,
   BsArrowLeft,
@@ -20,10 +20,13 @@ import {
   BsCloudUpload,
   BsEye,
   BsCardImage,
+  BsPlusLg,
+  BsArrowRepeat,
 } from 'react-icons/bs';
 import DashboardShell from '@/app/_components/doctor/DashboardShell';
 import CaseChat from '@/app/_components/CaseChat';
 import FileGrid from '@/app/_components/FileGrid';
+import RevisionFormModal from '@/app/_components/doctor/RevisionFormModal';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/_components/ui/card';
 import { Button } from '@/app/_components/ui/button';
 import { Badge } from '@/app/_components/ui/badge';
@@ -68,11 +71,13 @@ const STATUS_CONFIG = {
   'in-progress': { label: 'In Progress' },
   delivered: { label: 'Awaiting Your Approval' },
   completed: { label: 'Completed' },
+  hold: { label: 'On Hold' },
 };
 
 export default function CaseDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const { id } = params;
 
   const [caseData, setCaseData] = useState(null);
@@ -81,6 +86,11 @@ export default function CaseDetailPage() {
 
   const [approveLoading, setApproveLoading] = useState(false);
   const [approveError, setApproveError] = useState('');
+
+  const [revisions, setRevisions] = useState([]);
+  const [revisionModalOpen, setRevisionModalOpen] = useState(false);
+  const [approveRevisionLoading, setApproveRevisionLoading] = useState(false);
+  const [approveRevisionError, setApproveRevisionError] = useState('');
 
   const fetchCase = async () => {
     try {
@@ -101,11 +111,36 @@ export default function CaseDetailPage() {
     }
   };
 
+  const fetchRevisions = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/cases/${id}/revisions`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRevisions(Array.isArray(data) ? data : []);
+      }
+    } catch {
+      // Non-fatal — the case still renders without the revisions list.
+    }
+  };
+
   useEffect(() => {
     if (!id) return;
     fetchCase();
+    fetchRevisions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Deep-link support: /doctor/cases/[id]?newRevision=1 auto-opens the modal
+  // (used by the "New Revision" button on the completed-case rows in the list).
+  useEffect(() => {
+    if (searchParams.get('newRevision') === '1' && caseData?.status === 'completed') {
+      setRevisionModalOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseData, searchParams]);
 
   const handleApprove = async () => {
     setApproveLoading(true);
@@ -125,6 +160,27 @@ export default function CaseDetailPage() {
       setApproveError(err.message);
     } finally {
       setApproveLoading(false);
+    }
+  };
+
+  const handleApproveRevision = async (revisionId) => {
+    setApproveRevisionLoading(true);
+    setApproveRevisionError('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/revisions/${revisionId}/approve`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to approve revision.');
+      }
+      setRevisions((prev) => prev.map((r) => (r._id === revisionId ? data : r)));
+    } catch (err) {
+      setApproveRevisionError(err.message);
+    } finally {
+      setApproveRevisionLoading(false);
     }
   };
 
@@ -163,8 +219,52 @@ export default function CaseDetailPage() {
     ? `${caseData.pickedBy.firstName} ${caseData.pickedBy.lastName}`
     : null;
 
+  // Effective status: a reopened case (one with revisions) shows the latest
+  // revision's status instead of the parent case's "completed" status.
+  const displayStatus = caseData.revisionStatus ?? caseData.status;
+
+  const isOnHold = caseData.status === 'hold';
+
+  // Items the doctor still has to pay the admin for (admin hasn't marked paid).
+  // Surfaced as a sticky banner below so it's always visible while scrolling.
+  const unpaidItems = [];
+  if (!caseData.paid) unpaidItems.push('this case');
+  revisions.forEach((r, idx) => {
+    if (!r.paid) unpaidItems.push(`Revision #${revisions.length - idx}`);
+  });
+
   return (
     <DashboardShell>
+      {isOnHold && (
+        <Alert variant="destructive" className="mb-4 gap-2 border-0 bg-destructive/10">
+          <BsExclamationTriangleFill />
+          <AlertDescription>
+            <span>This case is on hold by the admin, so you can&apos;t edit it right now.</span>
+            {caseData.holdReason ? (
+              <span className="mt-1 block">
+                <strong>Reason:</strong> {caseData.holdReason}
+              </span>
+            ) : null}
+            <span className="mt-1 block">It will be available again once the admin changes its status.</span>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {unpaidItems.length > 0 && (
+        <div className="sticky top-0 z-50 mb-4 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-foreground shadow-sm">
+          <BsExclamationTriangleFill className="mt-0.5 text-base text-warning" />
+          <div>
+            <strong>Payment not done.</strong> The admin has not marked payment as received for:
+            <ul className="mt-1 list-inside list-disc">
+              {unpaidItems.map((label, i) => (
+                <li key={i}>{label}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      <div className={isOnHold ? 'pointer-events-none opacity-50 select-none' : ''}>
       {/* Header */}
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -185,7 +285,12 @@ export default function CaseDetailPage() {
             })}
           </p>
         </div>
-        <StatusBadge status={caseData.status} label={STATUS_CONFIG[caseData.status]?.label} className="px-3 py-2 text-sm" />
+        <StatusBadge status={displayStatus} label={STATUS_CONFIG[displayStatus]?.label} className="px-3 py-2 text-sm" />
+          {caseData.status === 'completed' && (
+            <Button className="gap-2" onClick={() => setRevisionModalOpen(true)}>
+              <BsPlusLg /> New Revision
+            </Button>
+          )}
       </div>
 
       {/* Designer Pickup Status */}
@@ -200,10 +305,11 @@ export default function CaseDetailPage() {
         </AlertDescription>
       </Alert>
 
-      {/* Design Delivery */}
-      {caseData.designLink && (
-        <Alert className={`mb-4 border-0 ${caseData.status === 'delivered' ? 'bg-info/15' : 'bg-success/10'}`}>
-          <div className="mb-1 flex items-center gap-2">
+      {/* Design Delivery — hidden while a revision is actively open, since the
+          revision's own delivery/approval lives in the Revisions section below. */}
+      {caseData.designLink && !(caseData.revisionStatus && caseData.revisionStatus !== 'completed') && (
+        <Alert className={`mb-4 flex flex-col gap-3 border-0 ${caseData.status === 'delivered' ? 'bg-info/15' : 'bg-success/10'}`}>
+          <div className="mb-1 flex fle-x items-center gap-2">
             {caseData.status === 'delivered' ? (
               <BsHourglassSplit className="text-lg" />
             ) : (
@@ -370,6 +476,105 @@ export default function CaseDetailPage() {
           </div>
         </div>
       </Section>
+
+      {/* Revisions — only meaningful once a case is completed; reuse the case
+          with only 3 things (scan files, patient images/xray, special note). */}
+      {revisions.length > 0 && (
+        <Section title={`Revisions (${revisions.length})`} icon={BsArrowRepeat}>
+          <div className="flex flex-col gap-4">
+            {revisions.map((r, index) => {
+              const revNumber = revisions.length - index;
+              const pickedBy = r.pickedBy ? `${r.pickedBy.firstName} ${r.pickedBy.lastName}` : null;
+              return (
+                <Card key={r._id} className="border shadow-sm">
+                  <CardContent className="p-4">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <strong className="text-base">Revision #{revNumber}</strong>
+                        <StatusBadge status={r.status} />
+                      </div>
+                      <span className="text-sm text-muted-foreground">
+                        Created {new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    </div>
+
+                    {r.specialNote && (
+                      <div className="mb-3">
+                        <div className="mb-1 text-sm font-semibold text-muted-foreground">Special Note</div>
+                        <div className="whitespace-pre-wrap rounded-md bg-muted p-3 text-sm">{r.specialNote}</div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div>
+                        <h6 className="mb-2 flex items-center gap-1 text-sm font-semibold text-muted-foreground">
+                          <BsEye className="text-primary" /> Scan Files ({r.scanFiles?.length || 0})
+                        </h6>
+                        <FileGrid files={r.scanFiles} emptyLabel="No scan files uploaded." />
+                      </div>
+                      <div>
+                        <h6 className="mb-2 flex items-center gap-1 text-sm font-semibold text-muted-foreground">
+                          <BsCardImage className="text-success" /> Patient Images ({r.patientImages?.length || 0})
+                        </h6>
+                        <FileGrid files={r.patientImages} emptyLabel="No patient images uploaded." />
+                      </div>
+                    </div>
+
+                    {r.designLink && (
+                      <div className="mt-3">
+                        <div className="mb-1 text-sm font-semibold text-muted-foreground">Delivered Design Link</div>
+                        <a href={r.designLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2">
+                          {r.designLink} <BsBoxArrowUpRight className="text-sm" />
+                        </a>
+                        {r.deliveredAt && (
+                          <p className="mt-1 mb-0 text-sm text-muted-foreground">
+                            Delivered on {new Date(r.deliveredAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                          </p>
+                        )}
+                        {r.status === 'delivered' ? (
+                          <div className="mt-3">
+                            <Button size="sm" className="gap-2" onClick={() => handleApproveRevision(r._id)} disabled={approveRevisionLoading}>
+                              {approveRevisionLoading ? <Spinner className="border-white" /> : <BsCheckLg />} Approve Design
+                            </Button>
+                          </div>
+                        ) : r.status === 'completed' && r.approvedAt ? (
+                          <p className="mt-2 mb-0 text-sm text-muted-foreground">
+                            Approved on {new Date(r.approvedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                          </p>
+                        ) : null}
+                      </div>
+                    )}
+
+                    {pickedBy && (
+                      <p className="mt-3 mb-0 text-sm text-muted-foreground">
+                        Picked by <strong>{pickedBy}</strong>
+                      </p>
+                    )}
+                    {r.status === 'hold' && r.holdReason && (
+                      <Alert variant="destructive" className="mt-3 border-0 bg-destructive/10">
+                        <BsExclamationTriangleFill />
+                        <AlertDescription>
+                          <span className="font-semibold">On hold:</span> {r.holdReason}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+          {approveRevisionError && <div className="mt-2 text-sm text-destructive">{approveRevisionError}</div>}
+        </Section>
+      )}
+
+      </div>
+
+      <RevisionFormModal
+        caseId={id}
+        open={revisionModalOpen}
+        onOpenChange={setRevisionModalOpen}
+        onCreated={(revision) => setRevisions((prev) => [revision, ...prev])}
+      />
     </DashboardShell>
   );
 }

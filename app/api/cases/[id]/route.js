@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/app/lib/prisma';
 import { requireUser } from '@/app/lib/auth';
-import { serializeCase, omit } from '@/app/lib/serialize';
+import { serializeCase, omit, computeRevisionStatus } from '@/app/lib/serialize';
 
 const REF_SELECT = { id: true, firstName: true, lastName: true, email: true };
 
@@ -35,7 +35,17 @@ export async function GET(req, { params }) {
         return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
       }
 
-      return NextResponse.json(serializeCase(caseDoc));
+      // A reopened case (with revisions) should surface the latest revision's
+      // status to the doctor instead of the parent case's "completed" status.
+      const revisions = await prisma.revision.findMany({
+        where: { caseId },
+        select: { status: true, createdAt: true },
+      });
+      const obj = serializeCase(caseDoc);
+      const revisionStatus = computeRevisionStatus(revisions);
+      if (revisionStatus) obj.revisionStatus = revisionStatus;
+
+      return NextResponse.json(obj);
     }
 
     // decoded.role === 'designer'
@@ -63,7 +73,17 @@ export async function GET(req, { params }) {
       }
     }
 
-    return NextResponse.json(omit(serializeCase(caseDoc), ['doctorId', 'practiceName']));
+    // A reopened case (with revisions) should surface the latest revision's
+    // status to the designer instead of the parent case's "completed" status.
+    const revisions = await prisma.revision.findMany({
+      where: { caseId },
+      select: { status: true, createdAt: true },
+    });
+    const obj = omit(serializeCase(caseDoc), ['doctorId', 'practiceName']);
+    const revisionStatus = computeRevisionStatus(revisions);
+    if (revisionStatus) obj.revisionStatus = revisionStatus;
+
+    return NextResponse.json(obj);
   } catch (error) {
     console.error('GET case error:', error);
     return NextResponse.json(

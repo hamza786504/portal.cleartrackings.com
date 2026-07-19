@@ -8,6 +8,7 @@ import {
   BsPersonBadge,
   BsPalette,
   BsBarChartLine,
+  BsFolder2,
   BsBoxArrowRight,
 } from 'react-icons/bs';
 import { cn } from '@/app/lib/utils';
@@ -18,6 +19,7 @@ const NAV_ITEMS = [
   { href: '/admin/doctors', label: 'Doctors', icon: BsPersonBadge },
   { href: '/admin/designers', label: 'Designers', icon: BsPalette },
   { href: '/admin/analytics', label: 'Analytics', icon: BsBarChartLine },
+  { href: '/admin/drive-files', label: 'Drive Manager', icon: BsFolder2 },
 ];
 
 export default function Sidebar() {

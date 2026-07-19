@@ -1,11 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { BsPalette, BsChevronUp, BsSliders, BsCheckLg, BsSave } from 'react-icons/bs';
+import { BsPalette, BsChevronUp, BsSliders, BsCheckLg, BsSave, BsArrowClockwise, BsCopy } from 'react-icons/bs';
 import DashboardShell from '@/app/_components/admin/DashboardShell';
 import { Card, CardContent } from '@/app/_components/ui/card';
 import { Badge } from '@/app/_components/ui/badge';
 import { Button } from '@/app/_components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/app/_components/ui/dialog';
 import Spinner from '@/app/_components/shared/Spinner';
 import { cn } from '@/app/lib/utils';
 
@@ -18,6 +26,9 @@ export default function AdminDesignersPage() {
   const [selectedDoctors, setSelectedDoctors] = useState([]);
   const [savingId, setSavingId] = useState(null);
   const [suspendingId, setSuspendingId] = useState(null);
+  const [resettingId, setResettingId] = useState(null);
+  const [resetResult, setResetResult] = useState(null);
+  const [copied, setCopied] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -121,6 +132,44 @@ export default function AdminDesignersPage() {
     }
   };
 
+  const handleResetPassword = async (designer) => {
+    if (
+      !confirm(
+        `Generate a new password for ${designer.firstName} ${designer.lastName}? Their current password will stop working immediately and the new one will be shown only once.`
+      )
+    ) {
+      return;
+    }
+    setResettingId(designer._id);
+    setCopied(false);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/admin/users/${designer._id}/reset-password`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to reset password');
+      // This is the ONLY time the plaintext is available — never stored again.
+      setResetResult(data);
+      await fetchData();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setResettingId(null);
+    }
+  };
+
+  const copyPassword = async () => {
+    if (!resetResult?.password) return;
+    try {
+      await navigator.clipboard.writeText(resetResult.password);
+      setCopied(true);
+    } catch {
+      // Clipboard may be unavailable (e.g. non-secure context) — user can still select the text.
+    }
+  };
+
   return (
     <DashboardShell>
       <div className="mb-4">
@@ -163,6 +212,9 @@ export default function AdminDesignersPage() {
                       <Badge className="bg-warning text-warning-foreground">Pending</Badge>
                     )}
                     {d.isSuspended && <Badge variant="destructive">Suspended</Badge>}
+                    {d.passwordResetRequested && (
+                      <Badge className="bg-info text-info-foreground">Reset requested</Badge>
+                    )}
                     {!d.isApproved && (
                       <Button
                         size="sm"
@@ -181,6 +233,16 @@ export default function AdminDesignersPage() {
                       onClick={() => handleSuspendToggle(d)}
                     >
                       {suspendingId === d._id ? <Spinner className="border-current" /> : d.isSuspended ? 'Unsuspend' : 'Suspend'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1 border-foreground/40 text-foreground hover:bg-foreground/10"
+                      disabled={resettingId === d._id}
+                      onClick={() => handleResetPassword(d)}
+                    >
+                      {resettingId === d._id ? <Spinner className="border-current" /> : <BsArrowClockwise />}
+                      {resettingId === d._id ? 'Resetting...' : 'Reset Password'}
                     </Button>
                     <Button size="sm" variant="outline" className="gap-1" onClick={() => toggleExpand(d)}>
                       {expandedId === d._id ? <BsChevronUp /> : <BsSliders />}
@@ -232,6 +294,47 @@ export default function AdminDesignersPage() {
           ))}
         </div>
       )}
+
+      <Dialog
+        open={!!resetResult}
+        onOpenChange={(open) => {
+          if (!open) setResetResult(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New password — shown only once</DialogTitle>
+            <DialogDescription>
+              Share this with {resetResult?.name || resetResult?.email}. It is never stored on the
+              server, so once you close this dialog it cannot be recovered — generate a fresh one if
+              needed.
+            </DialogDescription>
+          </DialogHeader>
+
+          {resetResult && (
+            <>
+              <div className="rounded-md border bg-muted px-3 py-3 font-mono text-sm break-all select-all">
+                {resetResult.password}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="gap-1"
+                onClick={copyPassword}
+              >
+                <BsCopy />
+                {copied ? 'Copied!' : 'Copy password'}
+              </Button>
+            </>
+          )}
+
+          <DialogFooter>
+            <Button type="button" className="bg-foreground text-background hover:bg-foreground/90" onClick={() => setResetResult(null)}>
+              Done — I&apos;ve saved it
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardShell>
   );
 }

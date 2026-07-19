@@ -42,12 +42,14 @@ export default function Dashboard() {
         const list = Array.isArray(data) ? data : [];
         setCases(list);
 
-        // Compute stats
+        // Compute stats — count by the EFFECTIVE status so a reopened case
+        // (one with revisions) is tallied by its latest revision's status.
+        const eff = (c) => c.revisionStatus ?? c.status;
         const total = list.length;
-        const pending = list.filter((c) => c.status === 'pending').length;
-        const completed = list.filter((c) => c.status === 'completed').length;
-        const inProgress = list.filter((c) => c.status === 'in-progress').length;
-        const delivered = list.filter((c) => c.status === 'delivered').length;
+        const pending = list.filter((c) => eff(c) === 'pending').length;
+        const completed = list.filter((c) => eff(c) === 'completed').length;
+        const inProgress = list.filter((c) => eff(c) === 'in-progress').length;
+        const delivered = list.filter((c) => eff(c) === 'delivered').length;
         setStats({ total, pending, inProgress, delivered, completed });
       } catch (err) {
         console.error('Failed to load cases:', err);

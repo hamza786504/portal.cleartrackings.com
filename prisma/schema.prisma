@@ -21,6 +21,7 @@ model User {
   lastName        String?
   isApproved      Boolean  @default(false)
   isSuspended     Boolean  @default(false)
+  passwordResetRequested Boolean @default(false)
   doctorDetails   Json?
   designerDetails Json?
   createdAt       DateTime @default(now())
@@ -28,6 +29,8 @@ model User {
 
   casesAsDoctor         Case[]               @relation("CaseDoctor")
   casesPicked           Case[]               @relation("CasePicker")
+  revisionsAsDoctor     Revision[]           @relation("RevisionDoctor")
+  revisionsPicked       Revision[]           @relation("RevisionPicker")
   messages              Message[]
   permissionsAsDesigner DesignerPermission[] @relation("PermDesigner")
   permissionsAsDoctor   DesignerPermission[] @relation("PermDoctor")
@@ -98,6 +101,23 @@ model Case {
 
   status String @default("pending")
 
+  // Payment flag: the doctor pays the admin per case (and per revision). The
+  // admin toggles this in the admin panel; the doctor only sees it read-only.
+  paid Boolean @default(false)
+
+  // Google Drive folder structure: one folder per case, named
+  // "[YYYY-MM-DD] - [patient name]", with a "chat" subfolder for chat
+  // attachments and a "revisions" subfolder for revision files. All three
+  // ids are stored so new uploads can be targeted and old cases (which
+  // predate these features) remain null and fall back to the root
+  // GOOGLE_DRIVE_FOLDER_ID.
+  googleDriveFolderId String?
+  caseFolderName      String?
+  chatFolderId        String?
+  revisionsFolderId   String?
+
+  holdReason String? @db.VarChar(191)
+
   pickedById Int?
   pickedBy   User? @relation("CasePicker", fields: [pickedById], references: [id])
 
@@ -109,8 +129,49 @@ model Case {
   updatedAt DateTime @updatedAt
 
   messages Message[]
+  revisions Revision[]
 
   @@map("cases")
+}
+
+// A Revision re-opens a COMPLETED case (e.g. a patient returns months later)
+// without creating a brand-new case. It captures only 3 things — scan files,
+// patient images/xray, and a special note — and re-runs the same designer +
+// approval lifecycle as a Case (pick -> deliver design link -> approve). It
+// reuses the parent case's existing chat thread and Google Drive folder.
+model Revision {
+  id        Int      @id @default(autoincrement())
+  caseId    Int
+  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  doctorId  Int
+  doctor    User     @relation("RevisionDoctor", fields: [doctorId], references: [id])
+
+  scanFiles     Json @default("[]")
+  patientImages Json @default("[]")
+  specialNote   String? @db.Text
+
+  status String @default("pending")
+
+  // Payment flag: the doctor pays the admin per case (and per revision). The
+  // admin toggles this in the admin panel; the doctor only sees it read-only.
+  paid Boolean @default(false) // pending | in-progress | delivered | completed | hold
+
+  pickedById Int?
+  pickedBy   User? @relation("RevisionPicker", fields: [pickedById], references: [id])
+
+  designLink  String    @default("")
+  deliveredAt DateTime?
+  approvedAt  DateTime?
+
+  holdReason String? @db.VarChar(191)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([caseId])
+  @@index([doctorId])
+  @@index([pickedById])
+  @@map("revisions")
 }
 
 model Message {
@@ -122,7 +183,9 @@ model Message {
   sender     User   @relation(fields: [senderId], references: [id])
   senderRole String
 
-  body      String   @db.VarChar(2000)
+  body        String   @db.VarChar(2000)
+  attachments Json     @default("[]")
+
   createdAt DateTime @default(now())
 
   @@index([caseId, createdAt])

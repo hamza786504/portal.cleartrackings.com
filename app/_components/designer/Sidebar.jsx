@@ -3,7 +3,7 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { BsGridFill, BsPersonWorkspace, BsFiles, BsCheckCircle, BsBoxArrowRight } from 'react-icons/bs';
+import { BsGridFill, BsPersonWorkspace, BsFiles, BsCheckCircle, BsBoxArrowRight, BsArrowRepeat } from 'react-icons/bs';
 import { cn } from '@/app/lib/utils';
 
 function SidebarContent() {
@@ -55,6 +55,12 @@ function SidebarContent() {
         <li>
           <Link href="/designer/cases?scope=completed" className={linkClass(isCasesActive('completed'))}>
             <BsCheckCircle /> Completed Cases
+          </Link>
+        </li>
+
+        <li>
+          <Link href="/designer/revisions?scope=all" className={linkClass(isActive('/designer/revisions'))}>
+            <BsArrowRepeat /> Revisions
           </Link>
         </li>
       </ul>

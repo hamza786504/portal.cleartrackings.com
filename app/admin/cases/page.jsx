@@ -24,24 +24,39 @@ function CasesContent() {
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const query = status !== 'all' ? `?status=${status}` : '';
+      const res = await fetch(`/api/admin/cases${query}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setCases(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Error fetching cases:', err);
+      setCases([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Merge an updated case into the list in place so the row refreshes
+  // immediately after a designer assignment — no page reload needed.
+  const handleCaseUpdated = (updatedCase) => {
+    setCases((prev) =>
+      prev.map((c) => (c._id === updatedCase._id ? updatedCase : c))
+    );
+  };
+
+  // Remove deleted case(s) from the list after an admin delete.
+  const handleCasesDeleted = (ids) => {
+    const set = new Set(ids);
+    setCases((prev) => prev.filter((c) => !set.has(c._id)));
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const token = localStorage.getItem('token');
-        const query = status !== 'all' ? `?status=${status}` : '';
-        const res = await fetch(`/api/admin/cases${query}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        setCases(Array.isArray(data) ? data : []);
-      } catch (err) {
-        console.error('Error fetching cases:', err);
-        setCases([]);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchData();
   }, [status]);
 
@@ -81,7 +96,7 @@ function CasesContent() {
           </div>
         </div>
       ) : (
-        <CaseTable cases={cases} />
+        <CaseTable cases={cases} onCasesChange={handleCaseUpdated} onCasesDeleted={handleCasesDeleted} />
       )}
     </div>
   );

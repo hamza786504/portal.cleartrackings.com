@@ -8,6 +8,7 @@ CREATE TABLE `users` (
     `lastName` VARCHAR(191) NULL,
     `isApproved` BOOLEAN NOT NULL DEFAULT false,
     `isSuspended` BOOLEAN NOT NULL DEFAULT false,
+    `passwordResetRequested` BOOLEAN NOT NULL DEFAULT false,
     `doctorDetails` JSON NULL,
     `designerDetails` JSON NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -70,6 +71,12 @@ CREATE TABLE `cases` (
     `scanFiles` JSON NOT NULL,
     `patientImages` JSON NOT NULL,
     `status` VARCHAR(191) NOT NULL DEFAULT 'pending',
+    `paid` TINYINT(1) NOT NULL DEFAULT 0,
+    `googleDriveFolderId` VARCHAR(191) NULL,
+    `caseFolderName` VARCHAR(191) NULL,
+    `chatFolderId` VARCHAR(191) NULL,
+    `revisionsFolderId` VARCHAR(191) NULL,
+    `holdReason` VARCHAR(191) NULL,
     `pickedById` INTEGER NULL,
     `designLink` VARCHAR(191) NOT NULL DEFAULT '',
     `deliveredAt` DATETIME(3) NULL,
@@ -87,6 +94,7 @@ CREATE TABLE `messages` (
     `senderId` INTEGER NOT NULL,
     `senderRole` VARCHAR(191) NOT NULL,
     `body` VARCHAR(2000) NOT NULL,
+    `attachments` JSON NOT NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
     INDEX `messages_caseId_createdAt_idx`(`caseId`, `createdAt`),
@@ -110,3 +118,36 @@ ALTER TABLE `messages` ADD CONSTRAINT `messages_caseId_fkey` FOREIGN KEY (`caseI
 
 -- AddForeignKey
 ALTER TABLE `messages` ADD CONSTRAINT `messages_senderId_fkey` FOREIGN KEY (`senderId`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- CreateTable
+CREATE TABLE `revisions` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `caseId` INTEGER NOT NULL,
+    `doctorId` INTEGER NOT NULL,
+    `scanFiles` JSON NOT NULL,
+    `patientImages` JSON NOT NULL,
+    `specialNote` TEXT NULL,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'pending',
+    `paid` TINYINT(1) NOT NULL DEFAULT 0,
+    `pickedById` INTEGER NULL,
+    `designLink` VARCHAR(191) NOT NULL DEFAULT '',
+    `deliveredAt` DATETIME(3) NULL,
+    `approvedAt` DATETIME(3) NULL,
+    `holdReason` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `revisions_caseId_idx`(`caseId`),
+    INDEX `revisions_doctorId_idx`(`doctorId`),
+    INDEX `revisions_pickedById_idx`(`pickedById`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- AddForeignKey
+ALTER TABLE `revisions` ADD CONSTRAINT `revisions_caseId_fkey` FOREIGN KEY (`caseId`) REFERENCES `cases`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `revisions` ADD CONSTRAINT `revisions_doctorId_fkey` FOREIGN KEY (`doctorId`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `revisions` ADD CONSTRAINT `revisions_pickedById_fkey` FOREIGN KEY (`pickedById`) REFERENCES `users`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
