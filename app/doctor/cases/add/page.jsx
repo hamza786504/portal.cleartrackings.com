@@ -47,7 +47,7 @@ export default function CreateCase() {
     treatArches: 'Both',
     velocity: '0.2',
     otherVelocity: '',
-    caseType: '3 3',
+    caseType: '',
     wearSchedule: '2 Weeks',
     retainer: 'YES',
     doNotMoveTeeth: [],
@@ -78,6 +78,7 @@ export default function CreateCase() {
 
   const [errors, setErrors] = useState({});
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isCaseTypeDropdownOpen, setIsCaseTypeDropdownOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false); // New Loading State
 
   const UPPER_RIGHT = ['18', '17', '16', '15', '14', '13', '12', '11'];
@@ -117,6 +118,7 @@ export default function CreateCase() {
       setErrors((prev) => ({ ...prev, otherVelocity: '' }));
     }
     if (field === 'treatmentPlan') setIsDropdownOpen(false);
+    if (field === 'caseType') setIsCaseTypeDropdownOpen(false);
   };
 
   const handleMultiSelection = (field, value) => {
@@ -487,13 +489,27 @@ export default function CreateCase() {
                     </div>
                     <div>
                       <Label className="mb-1 text-sm font-semibold text-muted-foreground">Case type <span className="text-destructive">*</span></Label>
-                      <div className="flex flex-wrap gap-2">
-                        {['3 3', '4 4', '5 5', '6 6'].map((opt) => (
-                          <TogglePill key={opt} selected={formData.caseType === opt} onClick={() => handleSelection('caseType', opt)} disabled={isLoading}>
-                            {opt}
-                          </TogglePill>
-                        ))}
-                      </div>
+                      <DropdownMenu open={isCaseTypeDropdownOpen} onOpenChange={setIsCaseTypeDropdownOpen}>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-between rounded-md border bg-white px-3 py-2 text-left"
+                            disabled={isLoading}
+                          >
+                            <span className={formData.caseType ? 'text-foreground' : 'text-muted-foreground'}>
+                              {formData.caseType || 'Select a case type'}
+                            </span>
+                            {isCaseTypeDropdownOpen ? <BsChevronUp /> : <BsChevronDown />}
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-(--radix-dropdown-menu-trigger-width)">
+                          {['Clear Aligners', 'Crown', 'Bridge', 'Implant Restoration', 'Veneer', 'Denture', 'Night Guard', 'Retainer', 'Other'].map((opt) => (
+                            <DropdownMenuItem key={opt} onClick={() => handleSelection('caseType', opt)}>
+                              {opt}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                       {errors.caseType && <div className="mt-1 text-sm text-destructive">{errors.caseType}</div>}
                     </div>
                     <h6 className="mt-3 mb-2 font-semibold text-muted-foreground">Manufacturing</h6>

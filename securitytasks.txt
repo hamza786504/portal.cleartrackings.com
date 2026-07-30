@@ -1,0 +1,295 @@
+﻿================================================================================
+  CLEARTRACKINGS DOCTOR PORTAL — PRODUCTION SECURITY HARDENING CHECKLIST
+  Generated: 2026-07-21
+  Project:   Next.js 16 + Prisma + MariaDB + JWT + Google OAuth + Google Drive
+================================================================================
+
+The following 10 tasks are NOT yet done in the codebase but are critical for
+hardening the production environment. Complete them before going live.
+
+--------------------------------------------------------------------------------
+TASK 1 — ADD CLOUDFLARE IN FRONT OF THE DOMAIN
+--------------------------------------------------------------------------------
+STATUS : NOT DONE
+PRIORITY: CRITICAL
+
+Steps:
+  a) Register / transfer your domain into Cloudflare DNS (free plan is enough).
+  b) Enable Proxied (orange cloud) for your A/CNAME records so Cloudflare
+     sits in front of every HTTP request.
+  c) Turn on Always Use HTTPS and set the SSL/TLS mode to Full (strict).
+  d) Enable Cloudflare WAF — free tier blocks the OWASP Top-10 automatically.
+  e) Enable DDoS protection (on by default once proxied).
+  f) Enable Bot Fight Mode under Security → Bots.
+  g) Set Cloudflare Page Rules to cache static assets (/public/*) and bypass
+     cache for /api/* routes.
+
+Why: Every request to cleartrackings.com will be inspected and filtered by
+Cloudflare before it ever reaches your server, blocking 99% of automated
+attacks, scrapers, and volumetric DDoS floods.
+
+
+--------------------------------------------------------------------------------
+TASK 2 — REPLACE THE WEAK JWT SECRET AND ROTATE ALL SECRETS
+--------------------------------------------------------------------------------
+STATUS : NOT DONE  (current secret: cleartrackings_jwt_secret_2024_please_change_this)
+PRIORITY: CRITICAL
+
+Steps:
+  a) Generate a cryptographically random 64-byte secret:
+       node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+  b) Set the new value as JWT_SECRET in your production secrets manager
+     (Vercel Environment Variables, AWS Secrets Manager, etc.).
+  c) Rotate DATABASE_URL to use a dedicated production DB user with minimum
+     required privileges (SELECT, INSERT, UPDATE, DELETE only — no DROP/CREATE).
+  d) Rotate GOOGLE_CLIENT_SECRET and GOOGLE_REFRESH_TOKEN via Google Cloud Console.
+  e) NEVER commit .env.local to git — add a pre-commit hook (e.g., gitleaks)
+     to enforce this.
+
+Why: The current JWT_SECRET is a guessable string. Anyone who knows it can forge
+valid JWT tokens and impersonate any user, including admins.
+
+
+--------------------------------------------------------------------------------
+TASK 3 — IMPLEMENT RATE LIMITING ON ALL AUTH ENDPOINTS
+--------------------------------------------------------------------------------
+STATUS : NOT DONE  (no rate limiting found in /api/auth/* routes)
+PRIORITY: CRITICAL
+
+Endpoints at risk:
+  /api/auth/login
+  /api/auth/admin-login
+  /api/auth/signup
+  /api/auth/forgot-password
+
+Steps:
+  a) Install a rate-limiting library:
+       npm install @upstash/ratelimit @upstash/redis
+     OR the lightweight in-memory option for a single-server setup:
+       npm install rate-limiter-flexible
+  b) Add a server-side check at the top of each route:
+     - Allow max 10 requests per IP per 15 minutes on login endpoints.
+     - Allow max 5 requests per IP per hour on forgot-password.
+  c) Return HTTP 429 Too Many Requests with a Retry-After header.
+  d) Optionally, add Cloudflare Rate Limiting rules as a first layer (Task 1).
+
+Why: Without rate limiting, an attacker can run unlimited brute-force or
+credential-stuffing attacks against the login endpoints.
+
+
+--------------------------------------------------------------------------------
+TASK 4 — ADD HTTP SECURITY HEADERS VIA next.config.mjs
+--------------------------------------------------------------------------------
+STATUS : NOT DONE  (next.config.mjs has no headers() configuration)
+PRIORITY: HIGH
+
+Steps:
+  Add a headers() export to next.config.mjs:
+
+    async headers() {
+      const securityHeaders = [
+        { key: 'X-DNS-Prefetch-Control',   value: 'on' },
+        { key: 'X-Frame-Options',           value: 'SAMEORIGIN' },
+        { key: 'X-Content-Type-Options',    value: 'nosniff' },
+        { key: 'Referrer-Policy',           value: 'strict-origin-when-cross-origin' },
+        { key: 'Permissions-Policy',        value: 'camera=(), microphone=(), geolocation=()' },
+        { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+        {
+          key: 'Content-Security-Policy',
+          value: [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline'",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data: https://lh3.googleusercontent.com",
+            "connect-src 'self'",
+            "frame-ancestors 'none'",
+          ].join('; '),
+        },
+      ];
+      return [{ source: '/(.*)', headers: securityHeaders }];
+    }
+
+Why: Without these headers, the app is vulnerable to clickjacking (X-Frame),
+MIME-sniffing attacks (X-Content-Type), and cross-site script injection (CSP).
+
+
+--------------------------------------------------------------------------------
+TASK 5 — ENFORCE HTTPS-ONLY COOKIES FOR JWT STORAGE
+--------------------------------------------------------------------------------
+STATUS : NOT DONE  (JWT is stored in localStorage — visible to any XSS attack)
+PRIORITY: HIGH
+
+Steps:
+  a) Stop storing the JWT in localStorage. localStorage is readable by any
+     JavaScript on the page; one XSS bug = full token theft.
+  b) Issue the JWT as an HttpOnly, Secure, SameSite=Strict cookie:
+       const cookieOptions = {
+         httpOnly: true,
+         secure: process.env.NODE_ENV === 'production',
+         sameSite: 'strict',
+         maxAge: 60 * 60 * 24,  // 24 hours
+         path: '/',
+       };
+       response.cookies.set('auth_token', token, cookieOptions);
+  c) Update verifyToken() in auth.js to read from cookies instead of the
+     Authorization header.
+  d) SameSite=Strict also prevents CSRF from foreign origins.
+
+Why: HttpOnly cookies cannot be read by JavaScript, making token theft via XSS
+impossible. This is the industry-standard approach for session management.
+
+
+--------------------------------------------------------------------------------
+TASK 6 — INPUT VALIDATION AND SANITIZATION ON ALL API ROUTES
+--------------------------------------------------------------------------------
+STATUS : NOT DONE  (API routes accept raw req.json() with no schema validation)
+PRIORITY: HIGH
+
+Steps:
+  a) Install a schema validation library:
+       npm install zod
+  b) Define a Zod schema for every API request body. Example for login:
+       const LoginSchema = z.object({
+         email:    z.string().email().max(254),
+         password: z.string().min(8).max(128),
+       });
+       const parsed = LoginSchema.safeParse(await req.json());
+       if (!parsed.success)
+         return NextResponse.json({ message: 'Invalid input' }, { status: 400 });
+  c) Apply similar schemas to signup, forgot-password, and all case/revision
+     mutation routes.
+  d) Never pass raw user input directly to Prisma — always use the validated
+     and typed version.
+
+Why: Without validation, attackers can send malformed payloads, oversized
+strings, or injection-attempt characters that crash or abuse your backend.
+
+
+--------------------------------------------------------------------------------
+TASK 7 — ENABLE ACCOUNT LOCKOUT AFTER REPEATED FAILED LOGINS
+--------------------------------------------------------------------------------
+STATUS : NOT DONE  (login route has no failed-attempt tracking)
+PRIORITY: HIGH
+
+Steps:
+  a) Add failedLoginAttempts (Int, default 0) and lockedUntil (DateTime?)
+     columns to the User table in your Prisma schema.
+  b) In the login route, after a failed password check:
+     - Increment failedLoginAttempts.
+     - If failedLoginAttempts >= 5, set lockedUntil = now + 15 minutes.
+  c) At the top of every login attempt, check:
+     - If lockedUntil is set and in the future → return 429 with minutes remaining.
+  d) On a successful login, reset failedLoginAttempts = 0 and lockedUntil = null.
+  e) Provide an admin UI action to manually unlock accounts.
+
+Why: Prevents brute-force attacks that guess passwords by trying thousands of
+combinations. Complements rate limiting (Task 3) with persistence across restarts.
+
+
+--------------------------------------------------------------------------------
+TASK 8 — ADD AUDIT LOGGING FOR SENSITIVE ACTIONS
+--------------------------------------------------------------------------------
+STATUS : NOT DONE  (no audit trail exists for admin or sensitive data operations)
+PRIORITY: MEDIUM
+
+Sensitive actions that need logging:
+  - Admin login / logout
+  - Doctor or designer account approved, suspended, or deleted
+  - Password reset triggered
+  - Case created, updated, or deleted
+  - Files uploaded to or deleted from Google Drive
+
+Steps:
+  a) Create an AuditLog table in Prisma:
+       model AuditLog {
+         id        Int      @id @default(autoincrement())
+         actorId   Int
+         action    String   // e.g. "CASE_DELETED", "USER_SUSPENDED"
+         targetId  String?
+         metadata  Json?
+         ip        String?
+         createdAt DateTime @default(now())
+       }
+  b) Write a logAction(actorId, action, targetId, meta, req) helper and call
+     it in every sensitive route.
+  c) Store the requester's IP from req.headers.get('x-forwarded-for').
+  d) Expose a read-only Audit Log page in the admin panel.
+
+Why: HIPAA / GDPR and general security best practice require an immutable audit
+trail. Without it, you cannot investigate breaches or prove compliance.
+
+
+--------------------------------------------------------------------------------
+TASK 9 — HARDEN THE DATABASE CONNECTION AND USE LEAST-PRIVILEGE ACCESS
+--------------------------------------------------------------------------------
+STATUS : NOT DONE  (credentials in plaintext; DB user may be over-privileged)
+PRIORITY: MEDIUM
+
+Steps:
+  a) Create a dedicated MariaDB user for production:
+       CREATE USER 'cleartrackings_app'@'localhost' IDENTIFIED BY '<random-password>';
+       GRANT SELECT, INSERT, UPDATE, DELETE ON cleartrackings.* TO 'cleartrackings_app'@'localhost';
+       FLUSH PRIVILEGES;
+  b) Bind MariaDB to 127.0.0.1 only so the DB port is never exposed publicly.
+  c) Enable MariaDB binary logging for point-in-time recovery.
+  d) Schedule automated encrypted database backups daily:
+       cron → mysqldump → encrypt with gpg → upload to Google Drive / S3
+     Keep 30 days of retention.
+  e) Store DATABASE_URL in a secret manager, never in source control.
+  f) Rotate the DB password every 90 days.
+
+Why: If the web server is compromised, a least-privileged DB user limits the
+blast radius. Backups ensure recovery from ransomware or accidental data loss.
+
+
+--------------------------------------------------------------------------------
+TASK 10 — SET UP MONITORING, ALERTING, AND DEPENDENCY SCANNING
+--------------------------------------------------------------------------------
+STATUS : NOT DONE  (no monitoring stack is configured)
+PRIORITY: MEDIUM
+
+Steps:
+  a) Error monitoring: Install Sentry (free tier):
+       npm install @sentry/nextjs
+     Catches runtime exceptions without exposing stack traces in HTTP responses.
+  b) Uptime monitoring: Use UptimeRobot (free) or Better Uptime to alert on
+     downtime within 1 minute.
+  c) Dependency scanning: Run npm audit in CI/CD:
+       npm audit --audit-level=critical
+     Block deploys if any critical CVEs are found.
+  d) Enable GitHub Dependabot alerts on the repository for automatic PR
+     notifications when a dependency has a known vulnerability.
+  e) Add Cloudflare Security Insights alert (Task 1) for unusual traffic spikes.
+  f) Log rotation: server.log is already over 1 MB and growing. Set up logrotate
+     or PM2 log rotation so it does not fill the disk.
+  g) Periodically run "npx next info" and keep Next.js on the latest patch
+     version to receive security fixes automatically.
+
+Why: You cannot defend what you cannot see. Monitoring turns invisible attacks
+into visible, actionable alerts and ensures dependencies do not silently become
+attack vectors.
+
+
+================================================================================
+  PRIORITY SUMMARY
+================================================================================
+
+  #   Task                                          Priority   Status
+  --  --------------------------------------------  ---------  -----------
+  1   Cloudflare WAF + DDoS + Bot protection        CRITICAL   NOT DONE
+  2   Rotate JWT secret and all credentials         CRITICAL   NOT DONE
+  3   Rate limiting on /api/auth/* endpoints        CRITICAL   NOT DONE
+  4   HTTP security headers in next.config.mjs      HIGH       NOT DONE
+  5   HttpOnly Secure cookies for JWT storage       HIGH       NOT DONE
+  6   Input validation with Zod on all API routes   HIGH       NOT DONE
+  7   Account lockout after failed login attempts   HIGH       NOT DONE
+  8   Audit logging for sensitive admin actions     MEDIUM     NOT DONE
+  9   Least-privilege DB user + encrypted backups   MEDIUM     NOT DONE
+  10  Monitoring: Sentry, npm audit, uptime checks  MEDIUM     NOT DONE
+
+  Action plan:
+    - CRITICAL items  → complete BEFORE production launch
+    - HIGH items      → complete within first sprint after launch
+    - MEDIUM items    → complete within first month after launch
+
+================================================================================

@@ -67,7 +67,7 @@ export default function DoctorSignup() {
     treatArches:        'Both',
     velocity:           '0.2',
     otherVelocity:      '',
-    caseType:           '3 3',
+    caseType:           '',
     wearSchedule:       '2 Weeks',
     retainer:           'YES',
     doNotMoveTeeth:     [],
@@ -98,6 +98,7 @@ export default function DoctorSignup() {
 
   const [errors, setErrors]               = useState({});
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isCaseTypeDropdownOpen, setIsCaseTypeDropdownOpen] = useState(false);
   const [loading, setLoading]             = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
 
@@ -121,6 +122,7 @@ export default function DoctorSignup() {
     if (field === 'velocity' && value !== 'Other' && errors.otherVelocity)
       setErrors((prev) => ({ ...prev, otherVelocity: '' }));
     if (field === 'treatmentPlan') setIsDropdownOpen(false);
+    if (field === 'caseType') setIsCaseTypeDropdownOpen(false);
   };
 
   const handleMultiSelection = (field, value) => {
@@ -657,11 +659,27 @@ export default function DoctorSignup() {
 
                   <div>
                     <Label className="mb-1 text-sm font-semibold text-muted-foreground">Case type <span className="text-destructive">*</span></Label>
-                    <div className="flex flex-wrap gap-2">
-                      {['3 3', '4 4', '5 5', '6 6'].map((opt) => (
-                        <TogglePill key={opt} selected={caseData.caseType === opt} onClick={() => handleSelection('caseType', opt)} disabled={loading}>{opt}</TogglePill>
-                      ))}
-                    </div>
+                    <DropdownMenu open={isCaseTypeDropdownOpen} onOpenChange={setIsCaseTypeDropdownOpen}>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between rounded-md border bg-white px-3 py-2 text-left"
+                          disabled={loading}
+                        >
+                          <span className={caseData.caseType ? 'text-foreground' : 'text-muted-foreground'}>
+                            {caseData.caseType || 'Select a case type'}
+                          </span>
+                          {isCaseTypeDropdownOpen ? <BsChevronUp /> : <BsChevronDown />}
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-(--radix-dropdown-menu-trigger-width)">
+                        {['Clear Aligners', 'Crown', 'Bridge', 'Implant Restoration', 'Veneer', 'Denture', 'Night Guard', 'Retainer', 'Other'].map((opt) => (
+                          <DropdownMenuItem key={opt} onClick={() => handleSelection('caseType', opt)}>
+                            {opt}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     {errors.caseType && <div className="mt-1 text-sm text-destructive">{errors.caseType}</div>}
                   </div>
 
