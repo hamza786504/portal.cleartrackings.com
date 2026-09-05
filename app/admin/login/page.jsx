@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { BsShieldLock, BsExclamationTriangleFill } from 'react-icons/bs';
 import { Card } from '@/app/_components/ui/card';
@@ -9,12 +9,15 @@ import { Label } from '@/app/_components/ui/label';
 import { Button } from '@/app/_components/ui/button';
 import { Alert, AlertDescription } from '@/app/_components/ui/alert';
 import Spinner from '@/app/_components/shared/Spinner';
+import Recaptcha from '@/app/_components/shared/Recaptcha';
 
 export default function AdminLogin() {
   const router = useRouter();
+  const recaptchaRef = useRef(null);
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [recaptchaToken, setRecaptchaToken] = useState(null);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -30,7 +33,7 @@ export default function AdminLogin() {
       const response = await fetch('/api/auth/admin-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, recaptchaToken }),
       });
 
       const data = await response.json();
@@ -95,6 +98,12 @@ export default function AdminLogin() {
                 disabled={loading}
               />
             </div>
+
+            <Recaptcha
+              ref={recaptchaRef}
+              onVerify={(token) => setRecaptchaToken(token)}
+              onExpire={() => setRecaptchaToken(null)}
+            />
 
             <Button
               type="submit"

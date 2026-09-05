@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { BsPersonBadge, BsSlashCircleFill, BsExclamationTriangleFill } from 'react-icons/bs';
@@ -11,13 +11,16 @@ import { Button } from '@/app/_components/ui/button';
 import { Alert, AlertDescription } from '@/app/_components/ui/alert';
 import Spinner from '@/app/_components/shared/Spinner';
 import PasswordInput from '@/app/_components/shared/PasswordInput';
+import Recaptcha from '@/app/_components/shared/Recaptcha';
 
 export default function DoctorLogin() {
   const router = useRouter();
+  const recaptchaRef = useRef(null);
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [suspendedNotice, setSuspendedNotice] = useState(false);
+  const [recaptchaToken, setRecaptchaToken] = useState(null);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('suspended') === '1') {
@@ -39,7 +42,7 @@ export default function DoctorLogin() {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, recaptchaToken }),
       });
 
       const data = await response.json();
@@ -111,6 +114,12 @@ export default function DoctorLogin() {
                 disabled={loading}
               />
             </div>
+
+            <Recaptcha
+              ref={recaptchaRef}
+              onVerify={(token) => setRecaptchaToken(token)}
+              onExpire={() => setRecaptchaToken(null)}
+            />
 
             <Button
               type="submit"
