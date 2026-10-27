@@ -60,9 +60,6 @@ const LOWER_LEFT = ['31', '32', '33', '34', '35', '36', '37', '38'];
 
 function getPriceDetails(plan) {
   if (!plan) return { show: false };
-  if (plan === 'Setup Review + 3D Printer Ready Files - $40.00') {
-    return { show: true, name: 'Setup Review + 3D Printer Ready Files', price: '$40.00' };
-  }
   if (plan === 'Setup Review Only - $30.00') {
     return { show: true, name: 'Setup Review Only', price: '$30.00' };
   }

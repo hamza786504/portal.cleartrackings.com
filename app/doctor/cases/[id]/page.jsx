@@ -34,6 +34,7 @@ import { Button } from '@/app/_components/ui/button';
 import { Badge } from '@/app/_components/ui/badge';
 import { Alert, AlertDescription } from '@/app/_components/ui/alert';
 import StatusBadge from '@/app/_components/shared/StatusBadge';
+import PaidBadge from '@/app/_components/shared/PaidBadge';
 import Spinner from '@/app/_components/shared/Spinner';
 
 const Section = ({ title, icon: Icon, action, children }) => (
@@ -289,12 +290,15 @@ export default function CaseDetailPage() {
             })}
           </p>
         </div>
-        <StatusBadge status={displayStatus} label={STATUS_CONFIG[displayStatus]?.label} className="px-3 py-2 text-sm" />
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge status={displayStatus} label={STATUS_CONFIG[displayStatus]?.label} className="px-3 py-2 text-sm" />
+          <PaidBadge paid={!!caseData.paid} className="px-3 py-2 text-sm" />
           {caseData.status === 'completed' && (
             <Button className="gap-2" onClick={() => setRevisionModalOpen(true)}>
               <BsPlusLg /> New Revision
             </Button>
           )}
+        </div>
       </div>
 
       {/* Designer Pickup Status */}
@@ -506,6 +510,7 @@ export default function CaseDetailPage() {
                       <div className="flex items-center gap-2">
                         <strong className="text-base">Revision #{revNumber}</strong>
                         <StatusBadge status={r.status} />
+                        <PaidBadge paid={!!r.paid} />
                       </div>
                       <span className="text-sm text-muted-foreground">
                         Created {new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}

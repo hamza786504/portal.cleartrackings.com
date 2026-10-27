@@ -432,8 +432,6 @@ export default function DoctorSignup() {
   };
 
   const getPriceDetails = (plan) => {
-    if (plan === 'Setup Review + 3D Printer Ready Files - $40.00')
-      return { show: true, name: 'Setup Review + 3D Printer Ready Files', price: '$40.00' };
     if (plan === 'Setup Review Only - $30.00')
       return { show: true, name: 'Setup Review Only', price: '$30.00' };
     return { show: false };
@@ -1015,9 +1013,6 @@ export default function DoctorSignup() {
                   <DropdownMenuContent className="w-(--radix-dropdown-menu-trigger-width)">
                     <DropdownMenuLabel>Orthodontics</DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => handleSelection('treatmentPlan', 'Setup Review + 3D Printer Ready Files - $40.00')}>
-                      Setup Review + 3D Printer Ready Files - $40.00
-                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleSelection('treatmentPlan', 'Setup Review Only - $30.00')}>
                       Setup Review Only - $30.00
                     </DropdownMenuItem>

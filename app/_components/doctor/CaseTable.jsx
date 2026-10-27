@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/app/_components/ui/badge';
 import { Button } from '@/app/_components/ui/button';
 import StatusBadge from '@/app/_components/shared/StatusBadge';
+import PaidBadge from '@/app/_components/shared/PaidBadge';
 
 export default function CaseTable({ cases, status = 'all' }) {
   if (!cases || cases.length === 0) {
@@ -76,13 +77,7 @@ export default function CaseTable({ cases, status = 'all' }) {
                     <StatusBadge status={c.revisionStatus ?? c.status} />
                   </TableCell>
                   <TableCell className="px-3">
-                    <input
-                      type="checkbox"
-                      aria-label={`Case ${c.patientName} payment status`}
-                      className="size-4 cursor-not-allowed accent-success"
-                      checked={!!c.paid}
-                      disabled
-                    />
+                    <PaidBadge paid={!!c.paid} />
                   </TableCell>
                   <TableCell className="px-3">
                     {pickedBy ? (
