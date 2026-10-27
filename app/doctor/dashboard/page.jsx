@@ -18,6 +18,7 @@ import DashboardShell from '@/app/_components/doctor/DashboardShell';
 import StatCard from '@/app/_components/shared/StatCard';
 import { Button } from '@/app/_components/ui/button';
 import Spinner from '@/app/_components/shared/Spinner';
+import WelcomeBanner from '@/app/_components/shared/WelcomeBanner';
 
 export default function Dashboard() {
   const [cases, setCases] = useState([]);
@@ -105,6 +106,8 @@ export default function Dashboard() {
 
   return (
     <DashboardShell>
+      <WelcomeBanner role="doctor" />
+
       {/* Page Header */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>

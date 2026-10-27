@@ -6,6 +6,11 @@ datasource db {
   provider = "mysql"
 }
 
+enum AuthProvider {
+  local
+  google
+}
+
 enum Role {
   doctor
   designer
@@ -16,12 +21,19 @@ model User {
   id              Int      @id @default(autoincrement())
   email           String   @unique
   password        String
+  authProvider    AuthProvider @default(local)
+  googleId        String?      @unique
   role            Role     @default(doctor)
   firstName       String?
   lastName        String?
   isApproved      Boolean  @default(false)
   isSuspended     Boolean  @default(false)
   passwordResetRequested Boolean @default(false)
+  resetOtpHash      String?
+  resetOtpExpiresAt DateTime?
+  resetOtpSentAt    DateTime?
+  resetOtpAttempts  Int       @default(0)
+  hasSeenWelcome    Boolean   @default(false)
   doctorDetails   Json?
   designerDetails Json?
   createdAt       DateTime @default(now())
@@ -34,6 +46,7 @@ model User {
   messages              Message[]
   permissionsAsDesigner DesignerPermission[] @relation("PermDesigner")
   permissionsAsDoctor   DesignerPermission[] @relation("PermDoctor")
+  notifications         UserNotification[]
 
   @@map("users")
 }
@@ -130,6 +143,7 @@ model Case {
 
   messages Message[]
   revisions Revision[]
+  adminNotifications AdminNotification[]
 
   @@map("cases")
 }
@@ -190,4 +204,35 @@ model Message {
 
   @@index([caseId, createdAt])
   @@map("messages")
+}
+
+// In-app notifications shown in the admin navbar bell (shared by all admins)
+model AdminNotification {
+  id        Int      @id @default(autoincrement())
+  type      String
+  title     String
+  message   String   @db.Text
+  caseId    Int?
+  case      Case?    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([isRead, createdAt])
+  @@map("admin_notifications")
+}
+
+// In-app notifications for a single doctor or designer (navbar bell)
+model UserNotification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String   @db.Text
+  link      String?  @db.VarChar(255)
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead, createdAt])
+  @@map("user_notifications")
 }

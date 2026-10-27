@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import bcrypt from 'bcryptjs';
 import prisma from '@/app/lib/prisma';
 import { verifyToken, generateTemporaryPassword } from '@/app/lib/auth';
+import { sendAdminPasswordResetEmail } from '@/app/lib/mailer';
 
 /**
  * POST /api/admin/users/[id]/reset-password
@@ -35,6 +36,13 @@ export async function POST(req, { params }) {
       );
     }
 
+    if (user.authProvider === 'google') {
+      return NextResponse.json(
+        { message: 'This user signs in with Google, so there is no password to reset.' },
+        { status: 400 }
+      );
+    }
+
     const plainPassword = generateTemporaryPassword();
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
@@ -42,6 +50,9 @@ export async function POST(req, { params }) {
       where: { id: userId },
       data: { password: hashedPassword, passwordResetRequested: false },
     });
+
+    // Tell the user their password changed; the new password itself is never emailed
+    after(() => sendAdminPasswordResetEmail(user));
 
     return NextResponse.json({
       message: 'Password reset. Share this with the user now — it will never be shown again.',

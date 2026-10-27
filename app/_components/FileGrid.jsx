@@ -6,9 +6,37 @@ import { Button } from '@/app/_components/ui/button';
 
 const isImage = (mimeType) => typeof mimeType === 'string' && mimeType.startsWith('image/');
 
-// Files are uploaded with "anyone with the link can view" sharing, so
-// Drive's public thumbnail endpoint can render them directly as <img>.
-const thumbUrl = (id, size) => `https://drive.google.com/thumbnail?id=${id}&sz=w${size}`;
+// Images are streamed through our own server (/api/files/[id]/preview)
+// rather than Drive's public thumbnail endpoint, which Google intermittently
+// answers with 503 in the browser. A failed load is retried a couple of times
+// before falling back to a placeholder.
+const previewUrl = (id) => `/api/files/${encodeURIComponent(id)}/preview`;
+const RETRY_DELAYS_MS = [2000, 5000];
+
+function DriveThumb({ file, className, onClick }) {
+  const [attempt, setAttempt] = useState(0);
+  const [failed, setFailed] = useState(false);
+
+  const handleError = () => {
+    if (attempt >= RETRY_DELAYS_MS.length) {
+      setFailed(true);
+      return;
+    }
+    setTimeout(() => setAttempt((a) => a + 1), RETRY_DELAYS_MS[attempt]);
+  };
+
+  if (failed) {
+    return (
+      <span className="flex h-full w-full flex-col items-center justify-center gap-1 p-1 text-center text-xs text-muted-foreground">
+        <BsFileEarmark className="text-lg text-primary" />
+        Preview unavailable
+      </span>
+    );
+  }
+
+  const src = attempt === 0 ? previewUrl(file.id) : `${previewUrl(file.id)}?r=${attempt}`;
+  return <img src={src} alt={file.name} loading="lazy" className={className} onError={handleError} onClick={onClick} />;
+}
 
 /**
  * Renders a list of Google Drive file records as a preview grid: image
@@ -68,7 +96,7 @@ export default function FileGrid({ files, emptyLabel }) {
               onClick={() => openPreview(f.id)}
               title={f.name}
             >
-              <img src={thumbUrl(f.id, 300)} alt={f.name} loading="lazy" className="block h-full w-full object-cover" />
+              <DriveThumb file={f} className="block h-full w-full object-cover" />
             </button>
           ) : (
             <a
@@ -133,9 +161,9 @@ export default function FileGrid({ files, emptyLabel }) {
             </Button>
           )}
 
-          <img
-            src={thumbUrl(preview.id, 1600)}
-            alt={preview.name}
+          <DriveThumb
+            key={preview.id}
+            file={preview}
             className="max-h-[80vh] max-w-[90vw] object-contain"
             onClick={(e) => e.stopPropagation()}
           />

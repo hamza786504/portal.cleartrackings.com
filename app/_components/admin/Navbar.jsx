@@ -6,6 +6,7 @@ import { BsColumnsGap, BsBoxArrowRight } from 'react-icons/bs';
 import { Badge } from '@/app/_components/ui/badge';
 import { Button } from '@/app/_components/ui/button';
 import { Avatar, AvatarFallback } from '@/app/_components/ui/avatar';
+import NotificationBell from '@/app/_components/shared/NotificationBell';
 
 function Navbar() {
   const [user, setUser] = useState(null);
@@ -48,6 +49,7 @@ function Navbar() {
         </div>
 
         <div className="flex items-center gap-3 text-white">
+          <NotificationBell apiBase="/api/admin/notifications" />
           <div className="flex items-center gap-2">
             <Avatar>
               <AvatarFallback className="bg-white font-bold text-foreground">{initials}</AvatarFallback>

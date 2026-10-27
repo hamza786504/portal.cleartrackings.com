@@ -22,11 +22,13 @@ import {
   BsCardImage,
   BsPlusLg,
   BsArrowRepeat,
+  BsPencilSquare,
 } from 'react-icons/bs';
 import DashboardShell from '@/app/_components/doctor/DashboardShell';
 import CaseChat from '@/app/_components/CaseChat';
 import FileGrid from '@/app/_components/FileGrid';
 import RevisionFormModal from '@/app/_components/doctor/RevisionFormModal';
+import EditCaseFilesModal from '@/app/_components/doctor/EditCaseFilesModal';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/_components/ui/card';
 import { Button } from '@/app/_components/ui/button';
 import { Badge } from '@/app/_components/ui/badge';
@@ -34,13 +36,14 @@ import { Alert, AlertDescription } from '@/app/_components/ui/alert';
 import StatusBadge from '@/app/_components/shared/StatusBadge';
 import Spinner from '@/app/_components/shared/Spinner';
 
-const Section = ({ title, icon: Icon, children }) => (
+const Section = ({ title, icon: Icon, action, children }) => (
   <Card className="mb-4 border-0 shadow-sm">
-    <CardHeader className="border-b py-3">
+    <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 border-b py-3">
       <CardTitle className="flex items-center gap-2 text-base">
         <Icon className="text-primary" />
         {title}
       </CardTitle>
+      {action}
     </CardHeader>
     <CardContent>{children}</CardContent>
   </Card>
@@ -91,6 +94,7 @@ export default function CaseDetailPage() {
   const [revisionModalOpen, setRevisionModalOpen] = useState(false);
   const [approveRevisionLoading, setApproveRevisionLoading] = useState(false);
   const [approveRevisionError, setApproveRevisionError] = useState('');
+  const [editFilesModalOpen, setEditFilesModalOpen] = useState(false);
 
   const fetchCase = async () => {
     try {
@@ -457,7 +461,17 @@ export default function CaseDetailPage() {
       </Section>
 
       {/* Files */}
-      <Section title="Uploaded Files" icon={BsCloudUpload}>
+      <Section
+        title="Uploaded Files"
+        icon={BsCloudUpload}
+        action={
+          caseData.status !== 'completed' && (
+            <Button size="sm" variant="outline" className="gap-2" onClick={() => setEditFilesModalOpen(true)}>
+              <BsPencilSquare /> Edit Pictures & Scans
+            </Button>
+          )
+        }
+      >
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {/* Scan Files */}
           <div>
@@ -574,6 +588,13 @@ export default function CaseDetailPage() {
         open={revisionModalOpen}
         onOpenChange={setRevisionModalOpen}
         onCreated={(revision) => setRevisions((prev) => [revision, ...prev])}
+      />
+
+      <EditCaseFilesModal
+        caseData={caseData}
+        open={editFilesModalOpen}
+        onOpenChange={setEditFilesModalOpen}
+        onSaved={(updated) => setCaseData((prev) => ({ ...prev, ...updated }))}
       />
     </DashboardShell>
   );

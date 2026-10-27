@@ -1,8 +1,16 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import bcrypt from 'bcryptjs';
 import prisma from '@/app/lib/prisma';
 import { serializeCase } from '@/app/lib/serialize';
 import driveService from '@/app/lib/googleDrive';
+import { sendSignupEmail } from '@/app/lib/mailer';
+import { notifyAdminsOfNewSignup } from '@/app/lib/adminNotify';
+import {
+  cleanSignupDetails,
+  googleUserData,
+  resolveSignupName,
+  verifyGoogleCredential,
+} from '@/app/lib/googleSignIn';
 
 const ARRAY_FIELDS = [
   'impressionsTaken',
@@ -16,9 +24,13 @@ const ARRAY_FIELDS = [
 export async function POST(req) {
   console.log('📝 Signup-with-case started');
 
+  // Tracked outside the try so a failure part-way through can be rolled back
+  let newUser = null;
+  let newCase = null;
+
   try {
     const formData = await req.formData();
-    console.log('FormData received, entries:', Array.from(formData.keys()));
+    console.log('FormData received, entries:', Array.from(formData.keys()).length);
 
     const fields = {};
     const scanFilesRaw = [];
@@ -44,57 +56,105 @@ export async function POST(req) {
       }
     }
 
-    console.log('Parsed fields:', Object.keys(fields));
+    console.log('Parsed fields:', Object.keys(fields).filter((k) => k !== 'password' && k !== 'googleCredential'));
     console.log('Scan files:', scanFilesRaw.length);
     console.log('Patient images:', patientImagesRaw.length);
 
     const { email, password, firstName, lastName, businessName, businessAddress, contactNumber, specialInstructions } = fields;
-    if (!email || !password || !firstName) {
-      console.error('Missing required fields:', { email: !!email, password: !!password, firstName: !!firstName });
-      return NextResponse.json(
-        { message: 'Name, email, and password are required' },
-        { status: 400 }
-      );
-    }
-    if (!password || password.length < 6) {
-      return NextResponse.json(
-        { message: 'Password must be at least 6 characters' },
-        { status: 400 }
-      );
-    }
 
-    const existing = await prisma.user.findUnique({
-      where: { email: email.toLowerCase().trim() }
-    });
+    if (fields.googleCredential) {
+      // ---------- GOOGLE SIGNUP ----------
+      const google = await verifyGoogleCredential(fields.googleCredential);
+      if (!google) {
+        return NextResponse.json(
+          { message: 'Google sign-in failed or expired. Please click "Sign up with Google" again.' },
+          { status: 401 }
+        );
+      }
 
-    if (existing) {
-      console.log('User already exists:', email);
-      return NextResponse.json(
-        { message: 'An account with this email already exists' },
-        { status: 400 }
-      );
-    }
+      const existing = await prisma.user.findFirst({
+        where: { OR: [{ googleId: google.googleId }, { email: google.email }] },
+      });
+      if (existing) {
+        return NextResponse.json(
+          {
+            message:
+              existing.authProvider === 'google'
+                ? 'You have already signed up with this Google account. Please log in with Google.'
+                : 'This email is registered with a password. Please log in with your email and password instead.',
+          },
+          { status: 409 }
+        );
+      }
 
-    console.log('Creating user...');
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+      const { details, error: detailsError } = cleanSignupDetails('doctor', {
+        businessName,
+        businessAddress,
+        contactNumber,
+        specialInstructions,
+      });
+      if (detailsError) {
+        return NextResponse.json({ message: detailsError }, { status: 400 });
+      }
 
-    const newUser = await prisma.user.create({
-      data: {
-        email: email.toLowerCase().trim(),
-        password: hashedPassword,
-        role: 'doctor',
-        firstName: firstName.trim(),
-        lastName: lastName ? lastName.trim() : '',
-        isApproved: false,
-        doctorDetails: {
-          businessName:        businessName        || '',
-          businessAddress:     businessAddress     || '',
-          contactNumber:       contactNumber       || '',
-          specialInstructions: specialInstructions || '',
+      const name = resolveSignupName([firstName, lastName].filter(Boolean).join(' '), google);
+      newUser = await prisma.user.create({
+        data: await googleUserData({ google, role: 'doctor', ...name, details }),
+      });
+    } else {
+      // ---------- EMAIL + PASSWORD SIGNUP ----------
+      if (!email || !password || !firstName) {
+        console.error('Missing required fields:', { email: !!email, password: !!password, firstName: !!firstName });
+        return NextResponse.json(
+          { message: 'Name, email, and password are required' },
+          { status: 400 }
+        );
+      }
+      if (password.length < 6) {
+        return NextResponse.json(
+          { message: 'Password must be at least 6 characters' },
+          { status: 400 }
+        );
+      }
+
+      const existing = await prisma.user.findUnique({
+        where: { email: email.toLowerCase().trim() }
+      });
+
+      if (existing) {
+        console.log('User already exists:', email);
+        return NextResponse.json(
+          {
+            message:
+              existing.authProvider === 'google'
+                ? 'An account with this email already exists and uses Google sign-in. Please log in with Google.'
+                : 'An account with this email already exists',
+          },
+          { status: 400 }
+        );
+      }
+
+      console.log('Creating user...');
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
+
+      newUser = await prisma.user.create({
+        data: {
+          email: email.toLowerCase().trim(),
+          password: hashedPassword,
+          role: 'doctor',
+          firstName: firstName.trim(),
+          lastName: lastName ? lastName.trim() : '',
+          isApproved: false,
+          doctorDetails: {
+            businessName:        businessName        || '',
+            businessAddress:     businessAddress     || '',
+            contactNumber:       contactNumber       || '',
+            specialInstructions: specialInstructions || '',
+          },
         },
-      },
-    });
+      });
+    }
     console.log('✅ User created:', newUser.id, newUser.email);
 
     // ---------- DRIVE FOLDER SETUP ----------
@@ -107,11 +167,7 @@ export async function POST(req) {
     const chatFolderId = folderInfo.chatFolderId || null;
 
     if (!caseFolderId) {
-      console.error('Failed to create case folder on Drive');
-      return NextResponse.json(
-        { message: 'Could not create Drive folder for case. Please try again.' },
-        { status: 500 }
-      );
+      throw new Error('Failed to create case folder on Drive');
     }
     // -----------------------------------------
 
@@ -212,7 +268,7 @@ export async function POST(req) {
 
     console.log('Case data prepared:', Object.keys(caseData));
 
-    const newCase = await prisma.case.create({
+    newCase = await prisma.case.create({
       data: caseData,
     });
 
@@ -229,6 +285,14 @@ export async function POST(req) {
       });
     }
 
+    // Welcome email — sent after the response so it doesn't slow down signup.
+    // Scheduled only on success so a failed signup doesn't send a welcome email.
+    const createdUser = newUser;
+    const createdCase = newCase;
+    after(() => sendSignupEmail(createdUser));
+    // One combined "new signup + case" email and bell notification for the admins
+    after(() => notifyAdminsOfNewSignup({ user: createdUser, caseDoc: createdCase }));
+
     return NextResponse.json(
       {
         message: 'Registration and case submission successful! Your account is pending admin approval.',
@@ -240,6 +304,25 @@ export async function POST(req) {
   } catch (error) {
     console.error('❌ Signup-with-case error:', error);
     console.error('Error stack:', error.stack);
+
+    // Roll back a half-finished signup so the doctor can simply try again,
+    // instead of being stuck with "An account with this email already exists".
+    if (newUser) {
+      try {
+        if (newCase) await prisma.case.delete({ where: { id: newCase.id } });
+        await prisma.user.delete({ where: { id: newUser.id } });
+        console.log('↩️  Rolled back partially created signup for', newUser.email);
+      } catch (rollbackError) {
+        console.error('Rollback after failed signup also failed:', rollbackError);
+      }
+    }
+
+    if (error?.message === 'invalid_grant' || error?.response?.data?.error === 'invalid_grant') {
+      console.error(
+        '   ↳ GOOGLE_REFRESH_TOKEN is expired or revoked. Generate a new one by visiting /api/auth/google.'
+      );
+    }
+
     return NextResponse.json(
       {
         message: 'Server error. Please try again.',

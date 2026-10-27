@@ -1,6 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import prisma from '@/app/lib/prisma';
 import { requireUser } from '@/app/lib/auth';
+import { notifyAdminsOfNewCase } from '@/app/lib/adminNotify';
+import { notifyDesignersOfNewCase } from '@/app/lib/userNotify';
 import { serializeCase, omit, computeRevisionStatus } from '@/app/lib/serialize';
 import driveService from '@/app/lib/googleDrive';
 
@@ -153,6 +155,17 @@ export async function POST(req) {
     };
 
     const newCase = await prisma.case.create({ data: caseData });
+
+    // Bell notification + email for the admins, after the response is sent
+    after(async () => {
+      const doctor = await prisma.user.findUnique({
+        where: { id: newCase.doctorId },
+        select: { firstName: true, lastName: true, email: true, doctorDetails: true },
+      });
+      if (doctor) await notifyAdminsOfNewCase({ caseDoc: newCase, doctor });
+    });
+    // ...and the designers who can pick it up
+    after(() => notifyDesignersOfNewCase(newCase));
 
     return NextResponse.json(
       { message: 'Case created successfully', case: serializeCase(newCase) },

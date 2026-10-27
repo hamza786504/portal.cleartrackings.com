@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { BsPersonPlus, BsCheckCircleFill, BsExclamationTriangleFill } from 'react-icons/bs';
+import { BsPersonPlus, BsCheckCircleFill, BsExclamationTriangleFill, BsGoogle } from 'react-icons/bs';
 import { Card } from '@/app/_components/ui/card';
 import { Input } from '@/app/_components/ui/input';
 import { Label } from '@/app/_components/ui/label';
@@ -11,6 +11,7 @@ import { Button } from '@/app/_components/ui/button';
 import { Alert, AlertDescription } from '@/app/_components/ui/alert';
 import Spinner from '@/app/_components/shared/Spinner';
 import PasswordInput from '@/app/_components/shared/PasswordInput';
+import GoogleSignInButton, { readGoogleProfile } from '@/app/_components/shared/GoogleSignInButton';
 import { cn } from '@/app/lib/utils';
 
 export default function DesignerSignup() {
@@ -27,6 +28,30 @@ export default function DesignerSignup() {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [googleCredential, setGoogleCredential] = useState('');
+  const [googleEmail, setGoogleEmail] = useState('');
+
+  const handleGoogleCredential = (credential) => {
+    const profile = readGoogleProfile(credential);
+    setGoogleCredential(credential);
+    setGoogleEmail(profile.email);
+    setFormData((prev) => ({
+      ...prev,
+      designerName: prev.designerName || profile.name,
+      contactEmail: profile.email,
+      password: '',
+      confirmPassword: '',
+    }));
+    setErrors({});
+    setSuccessMessage('');
+  };
+
+  const cancelGoogleSignup = () => {
+    setGoogleCredential('');
+    setGoogleEmail('');
+    setFormData((prev) => ({ ...prev, contactEmail: '' }));
+    setErrors({});
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -48,6 +73,12 @@ export default function DesignerSignup() {
       newErrors.contactNumber = 'Contact Number is required';
     } else if (!phoneRegex.test(formData.contactNumber.trim())) {
       newErrors.contactNumber = 'Please enter a valid contact number';
+    }
+
+    // Email and password come from Google when signing up with Google
+    if (googleCredential) {
+      setErrors(newErrors);
+      return Object.keys(newErrors).length === 0;
     }
 
     if (!formData.contactEmail.trim()) {
@@ -98,17 +129,34 @@ export default function DesignerSignup() {
         },
       };
 
-      const response = await fetch('/api/auth/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(signupData),
-      });
+      const response = googleCredential
+        ? await fetch('/api/auth/google-account', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              credential: googleCredential,
+              role: 'designer',
+              mode: 'signup',
+              fullName: formData.designerName,
+              details: signupData.designerDetails,
+            }),
+          })
+        : await fetch('/api/auth/signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(signupData),
+          });
 
       const data = await response.json();
 
       if (!response.ok) {
+        // Google tokens are short-lived; make them pick their account again
+        if (googleCredential && response.status === 401) cancelGoogleSignup();
         throw new Error(data.message || 'Signup failed');
       }
+
+      setGoogleCredential('');
+      setGoogleEmail('');
 
       setSuccessMessage(data.message);
       // Reset form
@@ -157,6 +205,37 @@ export default function DesignerSignup() {
             <BsExclamationTriangleFill />
             <AlertDescription>{errors.submit}</AlertDescription>
           </Alert>
+        )}
+
+        {googleCredential ? (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+            <span className="flex items-center gap-2">
+              <BsGoogle className="shrink-0" />
+              Signing up with Google as <strong>{googleEmail}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={cancelGoogleSignup}
+              className="font-semibold text-foreground hover:underline"
+              disabled={loading}
+            >
+              Use email &amp; password instead
+            </button>
+          </div>
+        ) : (
+          <>
+            <GoogleSignInButton
+              text="signup_with"
+              onCredential={handleGoogleCredential}
+              onError={(message) => setErrors({ submit: message })}
+              disabled={loading}
+            />
+            <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="h-px flex-1 bg-border" />
+              or sign up with email
+              <span className="h-px flex-1 bg-border" />
+            </div>
+          </>
         )}
 
         <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -210,6 +289,7 @@ export default function DesignerSignup() {
           </div>
 
           {/* Contact Email */}
+          {!googleCredential && (
           <div className="grid gap-1.5">
             <Label className="text-muted-foreground">
               Contact Email Address <span className="text-destructive">*</span>
@@ -224,8 +304,10 @@ export default function DesignerSignup() {
             />
             {errors.contactEmail && <div className="text-sm text-destructive">{errors.contactEmail}</div>}
           </div>
+          )}
 
           {/* Password */}
+          {!googleCredential && (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="grid gap-1.5">
               <Label className="text-muted-foreground">
@@ -256,6 +338,7 @@ export default function DesignerSignup() {
               {errors.confirmPassword && <div className="text-sm text-destructive">{errors.confirmPassword}</div>}
             </div>
           </div>
+          )}
 
           {/* Special Instructions */}
           <div className="mb-1 grid gap-1.5">

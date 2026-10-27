@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import prisma from '@/app/lib/prisma';
 import { verifyToken } from '@/app/lib/auth';
 import { serializeDesigner } from '@/app/lib/serialize';
+import { notifyDesignerOfNewAccess } from '@/app/lib/userNotify';
 
 const REF_SELECT = { id: true, firstName: true, lastName: true, email: true };
 
@@ -33,6 +34,10 @@ export async function PUT(req, { params }) {
       return NextResponse.json({ message: 'User is not a designer' }, { status: 400 });
     }
 
+    const before = await prisma.designerPermission.findMany({ where: { designerId }, select: { doctorId: true } });
+    const hadAccess = new Set(before.map((p) => p.doctorId));
+    const newDoctorCount = new Set(doctorIds.map(Number).filter((docId) => !hadAccess.has(docId))).size;
+
     await prisma.$transaction(async (tx) => {
       await tx.designerPermission.deleteMany({ where: { designerId } });
       if (doctorIds.length > 0) {
@@ -42,6 +47,9 @@ export async function PUT(req, { params }) {
         });
       }
     });
+
+    // Only newly added doctors trigger a notification, not removals
+    after(() => notifyDesignerOfNewAccess(designer, newDoctorCount));
 
     const updated = await prisma.user.findUnique({
       where: { id: designerId },

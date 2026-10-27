@@ -9,6 +9,7 @@ import { Label } from '@/app/_components/ui/label';
 import { Button } from '@/app/_components/ui/button';
 import { Alert, AlertDescription } from '@/app/_components/ui/alert';
 import Spinner from '@/app/_components/shared/Spinner';
+import PasswordInput from '@/app/_components/shared/PasswordInput';
 import Recaptcha from '@/app/_components/shared/Recaptcha';
 
 export default function AdminLogin() {
@@ -88,8 +89,7 @@ export default function AdminLogin() {
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="password">Password</Label>
-              <Input
-                type="password"
+              <PasswordInput
                 name="password"
                 id="password"
                 required

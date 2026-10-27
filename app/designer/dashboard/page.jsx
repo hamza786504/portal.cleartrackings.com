@@ -16,6 +16,7 @@ import DashboardShell from '@/app/_components/designer/DashboardShell';
 import StatCard from '@/app/_components/shared/StatCard';
 import { Button } from '@/app/_components/ui/button';
 import Spinner from '@/app/_components/shared/Spinner';
+import WelcomeBanner from '@/app/_components/shared/WelcomeBanner';
 
 const RECENT_LIMIT = 10;
 
@@ -168,6 +169,8 @@ export default function Dashboard() {
 
   return (
     <DashboardShell>
+      <WelcomeBanner role="designer" />
+
       {/* Page Header */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>

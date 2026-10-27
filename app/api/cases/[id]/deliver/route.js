@@ -1,6 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import prisma from '@/app/lib/prisma';
 import { requireUser } from '@/app/lib/auth';
+import { notifyDoctorOfCaseDelivered } from '@/app/lib/userNotify';
+import { notifyAdminsOfCaseEvent } from '@/app/lib/adminNotify';
 import { serializeCase, omit } from '@/app/lib/serialize';
 
 const REF_SELECT = { id: true, firstName: true, lastName: true, email: true };
@@ -40,6 +42,10 @@ export async function PATCH(req, { params }) {
         { status: 403 }
       );
     }
+
+    // Bell notification + email to the case's doctor
+    after(() => notifyDoctorOfCaseDelivered(caseId));
+    after(() => notifyAdminsOfCaseEvent('case_delivered', { caseId }));
 
     const updated = await prisma.case.findUnique({
       where: { id: caseId },

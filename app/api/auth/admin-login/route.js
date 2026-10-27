@@ -1,24 +1,9 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from '@/app/lib/prisma';
-
-async function verifyRecaptcha(token) {
-  if (!process.env.RECAPTCHA_SECRET_KEY) return true;
-  if (!token) return false;
-
-  const res = await fetch('https://www.google.com/recaptcha/api/siteverify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      secret: process.env.RECAPTCHA_SECRET_KEY,
-      response: token,
-    }),
-  });
-
-  const data = await res.json();
-  return data.success;
-}
+import { verifyRecaptcha } from '@/app/lib/recaptcha';
+import { sendLoginEmail } from '@/app/lib/mailer';
 
 /**
  * POST /api/auth/admin-login
@@ -67,6 +52,11 @@ export async function POST(req) {
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
+
+    // Security alert, same as doctor/designer logins
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || req.headers.get('x-real-ip');
+    const userAgent = req.headers.get('user-agent');
+    after(() => sendLoginEmail(user, { ip, userAgent }));
 
     return NextResponse.json({
       token,

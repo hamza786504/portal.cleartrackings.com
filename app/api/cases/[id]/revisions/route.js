@@ -1,6 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import prisma from '@/app/lib/prisma';
 import { requireUser } from '@/app/lib/auth';
+import { notifyDesignersOfNewRevision } from '@/app/lib/userNotify';
+import { notifyAdminsOfCaseEvent } from '@/app/lib/adminNotify';
 import { serializeRevision, omit } from '@/app/lib/serialize';
 import driveService from '@/app/lib/googleDrive';
 
@@ -158,6 +160,10 @@ export async function POST(req, { params }) {
       },
       include: { pickedBy: { select: PICKED_BY_SELECT }, doctor: { select: PICKED_BY_SELECT } },
     });
+
+    // Bell notification + email to the designers who can pick it up
+    after(() => notifyDesignersOfNewRevision({ revision, patientName: existing.patientName }));
+    after(() => notifyAdminsOfCaseEvent('revision_requested', { caseId: revision.caseId, revisionId: revision.id }));
 
     return NextResponse.json(
       { message: 'Revision created successfully', revision: serializeRevision(revision) },

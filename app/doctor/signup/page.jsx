@@ -15,6 +15,8 @@ import {
   BsCardImage,
   BsFiles,
   BsX,
+  BsGoogle,
+  BsFolderPlus,
 } from 'react-icons/bs';
 import { Card } from '@/app/_components/ui/card';
 import { Input } from '@/app/_components/ui/input';
@@ -33,6 +35,7 @@ import {
 import TogglePill from '@/app/_components/shared/TogglePill';
 import Spinner from '@/app/_components/shared/Spinner';
 import PasswordInput from '@/app/_components/shared/PasswordInput';
+import GoogleSignInButton, { readGoogleProfile } from '@/app/_components/shared/GoogleSignInButton';
 import { cn } from '@/app/lib/utils';
 
 // ─── Tooth constants ─────────────────────────────────────────────────────────
@@ -101,6 +104,33 @@ export default function DoctorSignup() {
   const [isCaseTypeDropdownOpen, setIsCaseTypeDropdownOpen] = useState(false);
   const [loading, setLoading]             = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  // Case submission at signup is optional — off by default
+  const [submitCase, setSubmitCase]       = useState(false);
+  const [caseSubmitted, setCaseSubmitted] = useState(false);
+  const [googleCredential, setGoogleCredential] = useState('');
+  const [googleEmail, setGoogleEmail]     = useState('');
+
+  // ── Google signup ──────────────────────────────────────────────────────────
+  const handleGoogleCredential = (credential) => {
+    const profile = readGoogleProfile(credential);
+    setGoogleCredential(credential);
+    setGoogleEmail(profile.email);
+    setAccount((prev) => ({
+      ...prev,
+      doctorName: prev.doctorName || profile.name,
+      contactEmail: profile.email,
+      password: '',
+      confirmPassword: '',
+    }));
+    setErrors({});
+  };
+
+  const cancelGoogleSignup = () => {
+    setGoogleCredential('');
+    setGoogleEmail('');
+    setAccount((prev) => ({ ...prev, contactEmail: '' }));
+    setErrors({});
+  };
 
   // ── Account handlers ───────────────────────────────────────────────────────
   const handleAccountChange = (e) => {
@@ -178,14 +208,18 @@ export default function DoctorSignup() {
     if (!account.businessAddress.trim()) errs.businessAddress = 'Business Address is required';
     if (!account.contactNumber.trim())   errs.contactNumber   = 'Contact Number is required';
     else if (!phoneRe.test(account.contactNumber.trim())) errs.contactNumber = 'Please enter a valid contact number';
+    // Email & password come from Google when signing up with Google
+    if (!googleCredential) {
     if (!account.contactEmail.trim())    errs.contactEmail    = 'Contact Email is required';
     else if (!emailRe.test(account.contactEmail.trim())) errs.contactEmail = 'Please enter a valid email address';
     if (!account.password)               errs.password        = 'Password is required';
     else if (account.password.length < 6) errs.password       = 'Password must be at least 6 characters';
     if (!account.confirmPassword)        errs.confirmPassword = 'Please confirm your password';
     else if (account.password !== account.confirmPassword) errs.confirmPassword = 'Passwords do not match';
+    }
 
-    // Case
+    // Case — only when the doctor chose to submit one now
+    if (submitCase) {
     if (!caseData.patientName.trim())    errs.patientName    = 'Patient Name is required';
     if (!caseData.practiceName.trim())   errs.practiceName   = 'Practice Name is required';
     if (!caseData.chiefComplaint.trim()) errs.chiefComplaint = 'Chief Complaint is required';
@@ -200,6 +234,7 @@ export default function DoctorSignup() {
     if (!caseData.treatmentPlan)         errs.treatmentPlan  = 'Treatment Plan is required';
     if (!caseData.scanFiles.length)      errs.scanFiles      = 'Scan Files are required';
     if (!caseData.patientImages.length)  errs.patientImages  = 'Patient Images are required';
+    }
 
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -218,37 +253,80 @@ export default function DoctorSignup() {
 
     setLoading(true);
 
-    const fd = new FormData();
-
-    // Account fields
-    const nameParts = account.doctorName.trim().split(' ');
-    fd.append('firstName',          nameParts[0]);
-    fd.append('lastName',           nameParts.slice(1).join(' ') || '');
-    fd.append('email',              account.contactEmail);
-    fd.append('password',           account.password);
-    fd.append('businessName',       account.businessName);
-    fd.append('businessAddress',    account.businessAddress);
-    fd.append('contactNumber',      account.contactNumber);
-    fd.append('specialInstructions', account.specialInstructions);
-
-    // Case fields
-    Object.keys(caseData).forEach((key) => {
-      if (key === 'scanFiles' || key === 'patientImages') {
-        caseData[key].forEach((file) => fd.append(key, file));
-      } else if (Array.isArray(caseData[key])) {
-        caseData[key].forEach((item) => fd.append(key, item));
-      } else {
-        fd.append(key, caseData[key]);
-      }
-    });
+    const nameParts = account.doctorName.trim().split(/\s+/);
+    const firstName = nameParts[0];
+    const lastName  = nameParts.slice(1).join(' ') || '';
+    const doctorDetails = {
+      businessName:        account.businessName,
+      businessAddress:     account.businessAddress,
+      contactNumber:       account.contactNumber,
+      specialInstructions: account.specialInstructions,
+    };
 
     try {
-      const res  = await fetch('/api/auth/signup-with-case', { method: 'POST', body: fd });
+      let res;
+      if (submitCase) {
+        // Account + first case in one multipart request
+        const fd = new FormData();
+        fd.append('firstName', firstName);
+        fd.append('lastName',  lastName);
+        if (googleCredential) {
+          fd.append('googleCredential', googleCredential);
+        } else {
+          fd.append('email',    account.contactEmail);
+          fd.append('password', account.password);
+        }
+        Object.entries(doctorDetails).forEach(([key, value]) => fd.append(key, value));
+
+        Object.keys(caseData).forEach((key) => {
+          if (key === 'scanFiles' || key === 'patientImages') {
+            caseData[key].forEach((file) => fd.append(key, file));
+          } else if (Array.isArray(caseData[key])) {
+            caseData[key].forEach((item) => fd.append(key, item));
+          } else {
+            fd.append(key, caseData[key]);
+          }
+        });
+
+        res = await fetch('/api/auth/signup-with-case', { method: 'POST', body: fd });
+      } else if (googleCredential) {
+        res = await fetch('/api/auth/google-account', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            credential: googleCredential,
+            role: 'doctor',
+            mode: 'signup',
+            fullName: account.doctorName,
+            details: doctorDetails,
+          }),
+        });
+      } else {
+        res = await fetch('/api/auth/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: account.contactEmail,
+            password: account.password,
+            firstName,
+            lastName,
+            role: 'doctor',
+            doctorDetails,
+          }),
+        });
+      }
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Submission failed');
+      if (!res.ok) {
+        // Google tokens are short-lived; make them pick their account again
+        if (googleCredential && res.status === 401) cancelGoogleSignup();
+        throw new Error(data.message || 'Signup failed');
+      }
+      setCaseSubmitted(submitCase);
       setSuccessMessage(data.message);
     } catch (err) {
-      setErrors({ submit: err.message || 'Submission failed. Please try again.' });
+      setErrors({ submit: err.message || 'Signup failed. Please try again.' });
+      setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
     } finally {
       setLoading(false);
     }
@@ -369,9 +447,13 @@ export default function DoctorSignup() {
           <div className="mb-4 inline-flex size-20 items-center justify-center rounded-full bg-success/10">
             <BsCheckCircleFill className="text-4xl text-success" />
           </div>
-          <h3 className="mb-3 font-bold text-foreground">Registration &amp; Case Submitted!</h3>
+          <h3 className="mb-3 font-bold text-foreground">
+            {caseSubmitted ? 'Registration & Case Submitted!' : 'Registration Successful!'}
+          </h3>
           <p className="mb-4 text-muted-foreground">{successMessage}</p>
-          <p className="mb-6 text-sm font-medium text-success">✓ Your case is now pending review by our team.</p>
+          {caseSubmitted && (
+            <p className="mb-6 text-sm font-medium text-success">✓ Your case is now pending review by our team.</p>
+          )}
           <Button asChild className="w-full">
             <Link href="/doctor/login">Go to Login</Link>
           </Button>
@@ -388,7 +470,7 @@ export default function DoctorSignup() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/85 backdrop-blur-[2px]">
           <div className="flex min-w-[300px] flex-col items-center rounded-2xl bg-white p-6 text-center shadow-lg">
             <Spinner className="size-12 border-primary" />
-            <h5 className="mt-3 font-bold">Uploading files &amp; registering...</h5>
+            <h5 className="mt-3 font-bold">{submitCase ? 'Uploading files & registering...' : 'Creating your account...'}</h5>
             <p className="mb-0 text-sm text-muted-foreground">Please keep this tab open.</p>
           </div>
         </div>
@@ -401,7 +483,7 @@ export default function DoctorSignup() {
             <BsPersonPlus className="text-2xl text-white" />
           </div>
           <h2 className="font-bold text-primary">Doctor Signup</h2>
-          <p className="text-sm text-muted-foreground">Create your account and submit your first case in one step</p>
+          <p className="text-sm text-muted-foreground">Create your account — and optionally submit your first case in the same step</p>
         </div>
 
         {errors.submit && (
@@ -409,6 +491,37 @@ export default function DoctorSignup() {
             <BsExclamationTriangleFill />
             <AlertDescription>{errors.submit}</AlertDescription>
           </Alert>
+        )}
+
+        {googleCredential ? (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/40 px-4 py-3 text-sm">
+            <span className="flex items-center gap-2">
+              <BsGoogle className="shrink-0" />
+              Signing up with Google as <strong>{googleEmail}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={cancelGoogleSignup}
+              className="font-semibold text-primary hover:underline"
+              disabled={loading}
+            >
+              Use email &amp; password instead
+            </button>
+          </div>
+        ) : (
+          <div className="mx-auto mb-4 w-full max-w-[400px]">
+            <GoogleSignInButton
+              text="signup_with"
+              onCredential={handleGoogleCredential}
+              onError={(message) => setErrors({ submit: message })}
+              disabled={loading}
+            />
+            <div className="mt-4 flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="h-px flex-1 bg-border" />
+              or sign up with email
+              <span className="h-px flex-1 bg-border" />
+            </div>
+          </div>
         )}
 
         <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-6">
@@ -488,6 +601,8 @@ export default function DoctorSignup() {
                 {errors.businessAddress && <div className="text-sm text-destructive">{errors.businessAddress}</div>}
               </div>
 
+              {!googleCredential && (
+              <>
               {/* Contact Email */}
               <div className="grid gap-1.5">
                 <Label className="text-muted-foreground">Contact Email Address <span className="text-destructive">*</span></Label>
@@ -529,6 +644,8 @@ export default function DoctorSignup() {
                   {errors.confirmPassword && <div className="text-sm text-destructive">{errors.confirmPassword}</div>}
                 </div>
               </div>
+              </>
+              )}
 
               {/* Special Instructions */}
               <div className="grid gap-1.5">
@@ -545,6 +662,58 @@ export default function DoctorSignup() {
             </div>
           </Card>
 
+          {/* ── Optional case submission toggle ── */}
+          <div
+            className={cn(
+              'flex items-center gap-4 rounded-2xl border p-4 shadow-sm transition-colors md:p-5',
+              submitCase ? 'border-primary/40 bg-primary/5' : 'bg-white'
+            )}
+          >
+            <div
+              className={cn(
+                'flex size-11 shrink-0 items-center justify-center rounded-full transition-colors',
+                submitCase
+                  ? 'bg-[linear-gradient(135deg,var(--color-brand-start),var(--color-brand-end))] text-white'
+                  : 'bg-muted text-muted-foreground'
+              )}
+            >
+              <BsFolderPlus className="text-lg" />
+            </div>
+            <label htmlFor="submitCaseToggle" className="min-w-0 flex-1 cursor-pointer">
+              <span className="block font-semibold text-foreground">Submit your first case now</span>
+              <span className="block text-sm text-muted-foreground">
+                Optional — you can also submit cases from your dashboard once your account is approved.
+              </span>
+            </label>
+            <button
+              type="button"
+              id="submitCaseToggle"
+              role="switch"
+              aria-checked={submitCase}
+              onClick={() => {
+                setSubmitCase((on) => !on);
+                setErrors({});
+              }}
+              disabled={loading}
+              className={cn(
+                'relative inline-flex h-8 w-14 shrink-0 items-center rounded-full transition-colors duration-200 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50',
+                submitCase
+                  ? 'bg-[linear-gradient(to_right,var(--color-brand-start),var(--color-brand-end))]'
+                  : 'bg-muted-foreground/30'
+              )}
+            >
+              <span className="sr-only">Submit your first case now</span>
+              <span
+                className={cn(
+                  'inline-block size-6 rounded-full bg-white shadow-md transition-transform duration-200',
+                  submitCase ? 'translate-x-7' : 'translate-x-1'
+                )}
+              />
+            </button>
+          </div>
+
+          {submitCase && (
+          <>
           {/* ════════════════════════════════════════════════════
               SECTION 2 — Case Details
           ════════════════════════════════════════════════════ */}
@@ -883,6 +1052,8 @@ export default function DoctorSignup() {
               </div>
             </div>
           </Card>
+          </>
+          )}
 
           {/* ── Submit ── */}
           <div className="flex flex-col gap-3">
@@ -890,11 +1061,15 @@ export default function DoctorSignup() {
               {loading ? (
                 <>
                   <Spinner className="border-white" />
-                  Registering &amp; Submitting Case...
+                  {submitCase ? 'Registering & Submitting Case...' : 'Creating Account...'}
+                </>
+              ) : submitCase ? (
+                <>
+                  <BsPlusLg /> Register &amp; Submit Case
                 </>
               ) : (
                 <>
-                  <BsPlusLg /> Register &amp; Submit Case
+                  <BsPersonPlus /> Create Account
                 </>
               )}
             </Button>

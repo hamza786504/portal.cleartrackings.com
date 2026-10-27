@@ -1,24 +1,8 @@
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import prisma from '@/app/lib/prisma';
-
-async function verifyRecaptcha(token) {
-  if (!process.env.RECAPTCHA_SECRET_KEY) return true;
-  if (!token) return false;
-
-  const res = await fetch('https://www.google.com/recaptcha/api/siteverify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      secret: process.env.RECAPTCHA_SECRET_KEY,
-      response: token,
-    }),
-  });
-
-  const data = await res.json();
-  return data.success;
-}
+import { verifyRecaptcha } from '@/app/lib/recaptcha';
+import { buildLoginResponse } from '@/app/lib/loginSession';
 
 export async function POST(req) {
   try {
@@ -44,6 +28,17 @@ export async function POST(req) {
       return NextResponse.json(
         { message: 'Invalid credentials' },
         { status: 401 }
+      );
+    }
+
+    // Accounts created with Google have no usable password
+    if (user.authProvider === 'google') {
+      return NextResponse.json(
+        {
+          message: 'This account was created with Google. Please use "Sign in with Google" to log in.',
+          authProvider: 'google',
+        },
+        { status: 400 }
       );
     }
 
@@ -78,31 +73,7 @@ export async function POST(req) {
       );
     }
 
-    const token = jwt.sign(
-      {
-        userId: String(user.id),
-        role: user.role,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-
-    return NextResponse.json({
-      token,
-      user: {
-        id: String(user.id),
-        email: user.email,
-        role: user.role,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        isApproved: user.isApproved,
-        doctorDetails: user.doctorDetails,
-        designerDetails: user.designerDetails,
-      },
-    });
+    return await buildLoginResponse(user, req);
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json(

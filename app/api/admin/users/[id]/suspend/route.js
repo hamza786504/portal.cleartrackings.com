@@ -1,6 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import prisma from '@/app/lib/prisma';
 import { verifyToken } from '@/app/lib/auth';
+import { sendAccountSuspendedEmail, sendAccountReactivatedEmail } from '@/app/lib/mailer';
+import { loginUrlFor } from '@/app/lib/appUrl';
 
 /**
  * PATCH /api/admin/users/[id]/suspend
@@ -47,6 +49,15 @@ export async function PATCH(req, { params }) {
         where: { pickedById: userId, status: { notIn: ['delivered', 'completed'] } },
         data: { pickedById: null, status: 'pending' },
       });
+    }
+
+    // Let the user know — only when the status actually changed
+    if (user.isSuspended !== suspended) {
+      after(() =>
+        suspended
+          ? sendAccountSuspendedEmail(user)
+          : sendAccountReactivatedEmail(user, { loginUrl: loginUrlFor(user.role) })
+      );
     }
 
     return NextResponse.json({

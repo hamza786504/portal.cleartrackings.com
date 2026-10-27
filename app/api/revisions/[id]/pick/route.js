@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import prisma from '@/app/lib/prisma';
 import { requireUser } from '@/app/lib/auth';
 import { serializeRevision, omit } from '@/app/lib/serialize';
+import { notifyDoctorOfWorkStarted } from '@/app/lib/userNotify';
 
 const REF_SELECT = { id: true, firstName: true, lastName: true, email: true };
 
@@ -55,6 +56,9 @@ export async function PATCH(req, { params }) {
       where: { id: revisionId },
       include: { pickedBy: { select: REF_SELECT } },
     });
+
+    // Let the doctor know work has started
+    after(() => notifyDoctorOfWorkStarted({ caseId: updated.caseId, revisionId }));
 
     return NextResponse.json(omit(serializeRevision(updated), ['doctorId']));
   } catch (error) {

@@ -1,6 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import bcrypt from 'bcryptjs';
 import prisma from '@/app/lib/prisma';
+import { sendSignupEmail } from '@/app/lib/mailer';
+import { notifyAdminsOfNewSignup } from '@/app/lib/adminNotify';
 
 export async function POST(req) {
   try {
@@ -32,7 +34,12 @@ export async function POST(req) {
     const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
     if (existing) {
       return NextResponse.json(
-        { message: 'An account with this email already exists' },
+        {
+          message:
+            existing.authProvider === 'google'
+              ? 'An account with this email already exists and uses Google sign-in. Please log in with Google.'
+              : 'An account with this email already exists',
+        },
         { status: 400 }
       );
     }
@@ -66,6 +73,10 @@ export async function POST(req) {
             }),
       },
     });
+
+    // Welcome email — sent after the response so it doesn't slow down signup
+    after(() => sendSignupEmail(newUser));
+    after(() => notifyAdminsOfNewSignup({ user: newUser }));
 
     return NextResponse.json(
       {

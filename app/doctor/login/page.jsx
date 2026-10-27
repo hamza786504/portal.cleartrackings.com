@@ -12,6 +12,7 @@ import { Alert, AlertDescription } from '@/app/_components/ui/alert';
 import Spinner from '@/app/_components/shared/Spinner';
 import PasswordInput from '@/app/_components/shared/PasswordInput';
 import Recaptcha from '@/app/_components/shared/Recaptcha';
+import GoogleSignInButton from '@/app/_components/shared/GoogleSignInButton';
 
 export default function DoctorLogin() {
   const router = useRouter();
@@ -31,6 +32,34 @@ export default function DoctorLogin() {
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setError('');
+  };
+
+  const handleGoogleCredential = async (credential) => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/auth/google-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential, role: 'doctor', mode: 'login' }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Google sign-in failed');
+      }
+
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+
+      router.push('/doctor/dashboard');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -88,6 +117,19 @@ export default function DoctorLogin() {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
+
+          <GoogleSignInButton
+            text="signin_with"
+            onCredential={handleGoogleCredential}
+            onError={setError}
+            disabled={loading}
+          />
+
+          <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="h-px flex-1 bg-border" />
+            or log in with email
+            <span className="h-px flex-1 bg-border" />
+          </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="grid gap-1.5">

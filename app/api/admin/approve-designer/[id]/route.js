@@ -1,6 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import prisma from '@/app/lib/prisma';
 import { verifyToken } from '@/app/lib/auth';
+import { sendAccountApprovedEmail } from '@/app/lib/mailer';
+import { loginUrlFor } from '@/app/lib/appUrl';
 
 /**
  * PUT /api/admin/approve-designer/[id]
@@ -25,6 +27,11 @@ export async function PUT(req, { params }) {
     }
 
     await prisma.user.update({ where: { id: user.id }, data: { isApproved: true } });
+
+    // Only email on the actual change, so a repeated click doesn't send it twice
+    if (!user.isApproved) {
+      after(() => sendAccountApprovedEmail(user, { loginUrl: loginUrlFor(user.role) }));
+    }
 
     return NextResponse.json({ message: 'Designer approved successfully' });
   } catch (error) {
